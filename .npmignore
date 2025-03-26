@@ -1,0 +1,10 @@
+.git/
+.gitignore
+.npmignore
+node_modules/
+tsconfig.json
+tsup.config.ts
+eslint.config.mjs
+src/
+*.ts
+!*.d.ts
