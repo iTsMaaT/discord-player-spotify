@@ -1,7 +1,5 @@
-import { fetch, UA } from "../helper";
+import { UA, market } from "./helper";
 
-const SP_ANON_TOKEN_URL =
-  "https://open.spotify.com/get_access_token?reason=transport&productType=embed";
 const SP_ACCESS_TOKEN_URL =
   "https://accounts.spotify.com/api/token?grant_type=client_credentials";
 const SP_BASE = "https://api.spotify.com/v1";
@@ -16,13 +14,15 @@ export class SpotifyAPI {
     public accessToken: SP_ACCESS_TOKEN | null = null;
     private clientId: string;
     private clientSecret: string;
+    private market: string;
 
-    constructor(credentials: { clientId: string; clientSecret: string }) {
+    constructor(credentials: { clientId: string; clientSecret: string, market?: string }) {
         if (!credentials.clientId || !credentials.clientSecret) 
             throw new Error("Spotify clientId and clientSecret are required.");
     
         this.clientId = credentials.clientId;
         this.clientSecret = credentials.clientSecret;
+        this.market = credentials.market || market;
     }
 
     private get authorizationKey() {
@@ -73,7 +73,7 @@ export class SpotifyAPI {
 
         try {
             const res = await fetch(
-                `${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&market=US`,
+                `${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&market=${this.market}`,
                 {
                     headers: {
                         "User-Agent": UA,
@@ -109,7 +109,7 @@ export class SpotifyAPI {
         try {
             await this.ensureValidToken();
 
-            const res = await fetch(`${SP_BASE}/playlists/${id}?market=US`, {
+            const res = await fetch(`${SP_BASE}/playlists/${id}?market=${this.market}`, {
                 headers: {
                     "User-Agent": UA,
                     Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
@@ -192,7 +192,7 @@ export class SpotifyAPI {
         try {
             await this.ensureValidToken();
 
-            const res = await fetch(`${SP_BASE}/albums/${id}?market=US`, {
+            const res = await fetch(`${SP_BASE}/albums/${id}?market=${this.market}`, {
                 headers: {
                     "User-Agent": UA,
                     Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
@@ -261,6 +261,38 @@ export class SpotifyAPI {
                 url:
           data.external_urls.spotify || `https://open.spotify.com/album/${id}`,
                 tracks,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    public async getTrack(id: string) {
+        if (!this.clientId || !this.clientSecret) 
+            throw new Error("Spotify clientId and clientSecret are required.");
+
+        try {
+            await this.ensureValidToken();
+
+            const res = await fetch(`${SP_BASE}/tracks/${id}?market=${this.market}`, {
+                headers: {
+                    "User-Agent": UA,
+                    Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
+                    "Content-Type": "application/json",
+                },
+            });
+            if (!res.ok) return null;
+
+            const track: SpotifyTrack = await res.json();
+            return {
+                name: track.name,
+                duration_ms: track.duration_ms,
+                artists: track.artists,
+                external_urls: track.external_urls,
+                id: track.id,
+                album: {
+                    images: track.album.images,
+                },
             };
         } catch {
             return null;

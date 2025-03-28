@@ -5,67 +5,52 @@ import {
     ExtractorSearchContext,
     ExtractorStreamable,
     Playlist,
-    QueryType,
-    SearchQueryType,
     Track,
     Util,
 } from "discord-player";
 import type { Readable } from "stream";
-import { fetch } from "./helper";
-import spotify, {
-    Spotify,
-    SpotifyAlbum,
-    SpotifyPlaylist,
-    SpotifySong,
-} from "spotify-url-info";
-import { SpotifyAPI } from "./internal/index";
+import { SpotifyAPI } from "./internal/spotify";
+import { 
+    spotifySongRegex, 
+    spotifyPlaylistRegex, 
+    spotifyAlbumRegex,
+    isUrl,
+    parseSpotifyUrl,
+    market,
+} from "./internal/helper";
 
-  type StreamFN = (
+type StreamFN = (
     url: string,
     track: Track,
-  ) => Promise<Readable | string>;
-  
-const re =
-    /^(?:https:\/\/open\.spotify\.com\/(intl-([a-z]|[A-Z]){0,3}\/)?(?:user\/[A-Za-z0-9]+\/)?|spotify:)(album|playlist|track)(?:[/:])([A-Za-z0-9]+).*$/;
+) => Promise<Readable | string>;
 
-const spotifySongRegex =
-  /^https?:\/\/(?:embed\.|open\.)(?:spotify\.com\/)(intl-([a-z]|[A-Z])+\/)?(?:track\/|\?uri=spotify:track:)((\w|-){22})(\?si=.+)?$/;
-const spotifyPlaylistRegex =
-  /^https?:\/\/(?:embed\.|open\.)(?:spotify\.com\/)(intl-([a-z]|[A-Z])+\/)?(?:playlist\/|\?uri=spotify:playlist:)((\w|-){22})(\?si=.+)?$/;
-const spotifyAlbumRegex =
-  /^https?:\/\/(?:embed\.|open\.)(?:spotify\.com\/)(intl-([a-z]|[A-Z])+\/)?(?:album\/|\?uri=spotify:album:)((\w|-){22})(\?si=.+)?$/;
-  
 export interface SpotifyExtractorInit {
-    clientId?: string | null;
-    clientSecret?: string | null;
+    clientId: string;
+    clientSecret: string;
+    market?: string | null;
     createStream?: (
       ext: SpotifyExtractor,
       url: string,
     ) => Promise<Readable | string>;
 }
 
-const isUrl = (query: string): boolean => {
-    try {
-        return ["http:", "https:"].includes(new URL(query).protocol);
-    } catch {
-        return false;
-    }
-};
-  
+export { parseSpotifyUrl };
+
 export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     public static identifier = "com.discord-player.spotifyextractor" as const;
     private _stream!: StreamFN;
-    private _lib!: Spotify;
     private _credentials = {
         clientId: this.options.clientId || process.env.DP_SPOTIFY_CLIENT_ID || "",
         clientSecret:
         this.options.clientSecret || process.env.DP_SPOTIFY_CLIENT_SECRET || "",
     };
-    public internal = new SpotifyAPI(this._credentials);
+
+    private _market = this.options.market || market;
+
+    public internal = new SpotifyAPI({ ...this._credentials, market: this._market });
   
     public async activate(): Promise<void> {
         this.protocols = ["spsearch", "spotify"];
-        this._lib = spotify(fetch);
   
         const fn = this.options.createStream;
         if (typeof fn === "function") {
@@ -77,7 +62,6 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
   
     public async deactivate() {
         this._stream = undefined as unknown as StreamFN;
-        this._lib = undefined as unknown as Spotify;
         this.protocols = [];
     }
   
@@ -165,59 +149,31 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
         query: string,
         context: ExtractorSearchContext,
     ): Promise<ExtractorInfo> {
+        const { id } = parseSpotifyUrl(query);
         if (spotifySongRegex.test(query)) {
-            const spotifyData = await this._lib
-                .getData(query, context.requestOptions as unknown as RequestInit)
-                .catch(Util.noop);
-            if (!spotifyData) return { playlist: null, tracks: [] };
+            const spotifyData = await this.internal.getTrack(id);
+            if (!spotifyData) return this.createResponse();
     
             const track = this.buildTrack(spotifyData, context);
             track.extractor = this;
     
-            return { playlist: null, tracks: [track] };
+            return this.createResponse(null, [track]);
         }
     
         if (spotifyPlaylistRegex.test(query)) {
-            try {
-                const { queryType, id } = this.parse(query);
-                if (queryType !== "playlist") throw "err";
-                
-                const spotifyPlaylist = await this.internal.getPlaylist(id);
-                if (!spotifyPlaylist) throw "err";
-    
-                const playlist = this.buildPlaylist(spotifyPlaylist, context, "playlist");
-                console.log(playlist);
-                return { playlist, tracks: playlist.tracks };
-            } catch (err) {
-                const spotifyPlaylist = await this._lib
-                    .getData(query, context.requestOptions as unknown as RequestInit)
-                    .catch(Util.noop);
-                if (!spotifyPlaylist) return { playlist: null, tracks: [] };
-    
-                const playlist = this.buildPlaylist(spotifyPlaylist, context, "playlist");
-                return { playlist, tracks: playlist.tracks };
-            }
+            const spotifyPlaylist = await this.internal.getPlaylist(id);
+            if (!spotifyPlaylist) return this.createResponse();
+
+            const playlist = this.buildPlaylist(spotifyPlaylist, context, "playlist");
+            return this.createResponse(playlist, playlist.tracks); 
         }
     
         if (spotifyAlbumRegex.test(query)) {
-            try {
-                const { queryType, id } = this.parse(query);
-                if (queryType !== "album") throw "err";
-    
-                const spotifyAlbum = await this.internal.getAlbum(id);
-                if (!spotifyAlbum) throw "err";
-    
-                const playlist = this.buildPlaylist(spotifyAlbum, context, "album");
-                return { playlist, tracks: playlist.tracks };
-            } catch {
-                const album = await this._lib
-                    .getData(query, context.requestOptions as unknown as RequestInit)
-                    .catch(Util.noop);
-                if (!album) return { playlist: null, tracks: [] };
-    
-                const playlist = this.buildPlaylist(album, context, "album");
-                return { playlist, tracks: playlist.tracks };
-            }
+            const spotifyAlbum = await this.internal.getAlbum(id);
+            if (!spotifyAlbum) return this.createResponse();
+
+            const playlist = this.buildPlaylist(spotifyAlbum, context, "album");
+            return this.createResponse(playlist, playlist.tracks);
         }
 
         const data = await this.internal.search(query);
@@ -245,11 +201,5 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
         if (!result?.result) throw new Error("Could not bridge this track");
   
         return result.result;
-    }
-  
-    public parse(q: string) {
-        const [, , , queryType, id] = re.exec(q) || [];
-  
-        return { queryType, id };
     }
 }

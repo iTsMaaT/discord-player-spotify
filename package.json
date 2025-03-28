@@ -1,6 +1,6 @@
 {
     "name": "discord-player-spotify",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "A spotify extractor for discord-player",
     "main": "dist/index.cjs",
     "module": "dist/index.mjs",
@@ -28,11 +28,6 @@
         "url": "https://github.com/iTsMaaT/discord-player-spotify"
     },
     "homepage": "https://github.com/iTsMaaT/discord-player-spotify",
-    "dependencies": {
-        "isomorphic-unfetch": "^4.0.2",
-        "soundcloud.ts": "^0.6.3",
-        "spotify-url-info": "^3.2.18"
-    },
     "keywords": [
         "discord",
         "bot",
