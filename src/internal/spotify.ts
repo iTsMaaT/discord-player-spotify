@@ -1,6 +1,7 @@
 import { TOTP } from "otpauth";
 import { UA, market } from "./helper";
 import * as cheerio from "cheerio";
+import { Buffer } from "node:buffer";
 
 const SP_BASE = "https://api.spotify.com/v1";
 
