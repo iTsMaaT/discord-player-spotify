@@ -53,15 +53,12 @@ export class SpotifyAPI {
             body: "grant_type=client_credentials",
           };
 
-      const token1 = await fetch(accessTokenUrl, fetchOptions);
-
-      const token = await token1.json();
-
-      if (!token) throw new Error("Failed to retrieve access token.");
+      const tokenData = await fetch(accessTokenUrl, fetchOptions).then((v) => v.json());
+      if (!tokenData) throw new Error("Failed to retrieve access token.");
 
       this.accessToken = {
-        token: token.accessToken,
-        expiresAfter: Date.now() + token.accessTokenExpirationTimestampMs,
+        token: !this.useCredentials ? tokenData.accessToken : tokenData.access_token,
+        expiresAfter: !this.useCredentials ? Date.now() + tokenData.accessTokenExpirationTimestampMs : Date.now() + tokenData.expires_in * 1000,
         type: "Bearer",
       };
     } catch (error) {
