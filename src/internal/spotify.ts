@@ -1,6 +1,6 @@
 import { Secret, TOTP } from "otpauth";
 import { UA, market } from "./helper";
-import * as cheerio from "cheerio";
+import { parse } from "node-html-parser";
 import { Buffer } from "node:buffer";
 
 const SP_BASE = "https://api.spotify.com/v1";
@@ -278,9 +278,10 @@ export class SpotifyAPI {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
       },
     }).then((v) => v.text());
-    const $ = cheerio.load(spotifyHtml);
-    const scriptTags = $("script").toArray();
-    const playerSrc = scriptTags.filter((v) => v.attribs.src?.includes("web-player/web-player."))[0].attribs.src;
+    const root = parse(spotifyHtml);
+    const scriptTags = root.querySelectorAll("script");
+    const playerSrc = scriptTags.find((v) => v.getAttribute("src")?.includes("web-player/web-player."))?.getAttribute("src");
+    if (!playerSrc) throw new Error("Could not find player script source");
     const playerScript = await fetch(playerSrc, {
       headers: {
         Dnt: "1",
