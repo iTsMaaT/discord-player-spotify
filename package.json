@@ -1,49 +1,54 @@
 {
-    "name": "discord-player-spotify",
-    "version": "1.0.1",
-    "description": "A spotify extractor for discord-player",
-    "main": "dist/index.cjs",
-    "module": "dist/index.mjs",
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js",
-            "require": "./dist/index.cjs"
-        }
-    },
-    "type": "module",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
-        "build": "tsup src/index.ts --format esm,cjs --dts --out-dir dist",
-        "code": "git pull && npm i && code . && eslint src",
-        "c": "npm run code"
-    },
-    "author": "iTsMaaT",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/iTsMaaT/discord-player-spotify.git"
-    },
-    "bugs": {
-        "url": "https://github.com/iTsMaaT/discord-player-spotify"
-    },
-    "homepage": "https://github.com/iTsMaaT/discord-player-spotify",
-    "keywords": [
-        "discord",
-        "bot",
-        "music",
-        "soundcloud",
-        "discord-player"
-    ],
-    "devDependencies": {
-        "@types/node": "^22.13.10",
-        "@typescript-eslint/eslint-plugin": "^8.26.1",
-        "@typescript-eslint/parser": "^8.26.1",
-        "discord-player": "^7.1.0",
-        "discord.js": "^14.18.0",
-        "eslint": "^9.22.0",
-        "globals": "^16.0.0",
-        "tsup": "^8.4.0",
-        "typescript": "^5.8.2"
+  "name": "discord-player-spotify",
+  "version": "1.0.1",
+  "description": "A spotify extractor for discord-player",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
+  },
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsup src/index.ts --format esm,cjs --dts --out-dir dist",
+    "code": "git pull && npm i && code . && eslint src",
+    "c": "npm run code",
+    "prepare": "npm run build"
+  },
+  "author": "iTsMaaT",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iTsMaaT/discord-player-spotify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iTsMaaT/discord-player-spotify"
+  },
+  "homepage": "https://github.com/iTsMaaT/discord-player-spotify",
+  "keywords": [
+    "discord",
+    "bot",
+    "music",
+    "soundcloud",
+    "discord-player"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@typescript-eslint/eslint-plugin": "^8.26.1",
+    "@typescript-eslint/parser": "^8.26.1",
+    "discord-player": "^7.1.0",
+    "discord.js": "^14.18.0",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "node-html-parser": "^7.0.1",
+    "otpauth": "^9.3.6"
+  }
 }
