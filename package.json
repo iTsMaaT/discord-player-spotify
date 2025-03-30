@@ -16,7 +16,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsup src/index.ts --format esm,cjs --dts --out-dir dist",
     "code": "git pull && npm i && code . && eslint src",
-    "c": "npm run code"
+    "c": "npm run code",
+    "prepare": "npm run build"
   },
   "author": "iTsMaaT",
   "license": "MIT",
