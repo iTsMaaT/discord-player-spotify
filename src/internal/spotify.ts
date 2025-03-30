@@ -1,4 +1,4 @@
-import { TOTP } from "otpauth";
+import { Secret, TOTP } from "otpauth";
 import { UA, market } from "./helper";
 import * as cheerio from "cheerio";
 import { Buffer } from "node:buffer";
@@ -38,6 +38,12 @@ export class SpotifyAPI {
 
       const fetchOptions: any = !this.useCredentials
         ? {
+            headers: {
+              Referer: "https://open.spotify.com/",
+              Origin: "https://open.spotify.com",
+            },
+          }
+        : {
             method: "POST",
             headers: {
               "User-Agent": UA,
@@ -45,15 +51,11 @@ export class SpotifyAPI {
               "Content-Type": "application/x-www-form-urlencoded",
             },
             body: "grant_type=client_credentials",
-          }
-        : {
-            headers: {
-              Referer: "https://open.spotify.com/",
-              Origin: "https://open.spotify.com",
-            },
           };
 
-      const token = await fetch(accessTokenUrl, fetchOptions).then((v) => v.json());
+      const token1 = await fetch(accessTokenUrl, fetchOptions);
+
+      const token = await token1.json();
 
       if (!token) throw new Error("Failed to retrieve access token.");
 
@@ -76,20 +78,23 @@ export class SpotifyAPI {
     if (this.isTokenExpired()) await this.requestToken();
   }
 
-  public async search(query: string) {
+  private async fetchData(apiUrl: string) {
     await this.ensureValidToken();
+    const res = await fetch(apiUrl, {
+      headers: {
+        Authorization: `Bearer ${this.accessToken?.token}`,
+        Referer: "https://open.spotify.com/",
+        Origin: "https://open.spotify.com",
+      },
+    });
 
+    if (!res.ok) throw new Error("Failed to fetch Spotify data.");
+    return res;
+  }
+
+  public async search(query: string) {
     try {
-      const res = await fetch(`${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&market=${this.market}`, {
-        headers: {
-          "User-Agent": UA,
-          Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      if (!res.ok) throw new Error("Failed to search Spotify.");
-
+      const res = await this.fetchData(`${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&market=${this.market}`);
       const data: { tracks: { items: SpotifyTrack[] } } = await res.json();
 
       return data.tracks.items.map((m) => ({
@@ -105,19 +110,9 @@ export class SpotifyAPI {
   }
 
   public async getPlaylist(id: string) {
-    if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
-
     try {
-      await this.ensureValidToken();
-
-      const res = await fetch(`${SP_BASE}/playlists/${id}?market=${this.market}`, {
-        headers: {
-          "User-Agent": UA,
-          Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) return null;
+      const res = await this.fetchData(`${SP_BASE}/playlists/${id}?market=${this.market}`);
+      if (!res) return null;
 
       const data: {
         external_urls: { spotify: string };
@@ -139,14 +134,8 @@ export class SpotifyAPI {
 
       while (typeof next === "string") {
         try {
-          const nextRes = await fetch(next, {
-            headers: {
-              "User-Agent": UA,
-              Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
-              "Content-Type": "application/json",
-            },
-          });
-          if (!nextRes.ok) break;
+          const nextRes = await this.fetchData(next);
+          if (!nextRes) break;
           const nextPage: { items: { track: SpotifyTrack }[]; next?: string } = await nextRes.json();
 
           t.push(...nextPage.items);
@@ -187,16 +176,8 @@ export class SpotifyAPI {
     if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
 
     try {
-      await this.ensureValidToken();
-
-      const res = await fetch(`${SP_BASE}/albums/${id}?market=${this.market}`, {
-        headers: {
-          "User-Agent": UA,
-          Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) return null;
+      const res = await this.fetchData(`${SP_BASE}/albums/${id}?market=${this.market}`);
+      if (!res) return null;
 
       const data: {
         external_urls: { spotify: string };
@@ -218,14 +199,8 @@ export class SpotifyAPI {
 
       while (typeof next === "string") {
         try {
-          const nextRes = await fetch(next, {
-            headers: {
-              "User-Agent": UA,
-              Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
-              "Content-Type": "application/json",
-            },
-          });
-          if (!nextRes.ok) break;
+          const nextRes = await this.fetchData(next);
+          if (!nextRes) break;
           const nextPage: { items: SpotifyTrack[]; next?: string } = await nextRes.json();
 
           t.push(...nextPage.items);
@@ -263,19 +238,9 @@ export class SpotifyAPI {
   }
 
   public async getTrack(id: string) {
-    if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
-
     try {
-      await this.ensureValidToken();
-
-      const res = await fetch(`${SP_BASE}/tracks/${id}?market=${this.market}`, {
-        headers: {
-          "User-Agent": UA,
-          Authorization: `${this.accessToken!.type} ${this.accessToken!.token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) return null;
+      const res = await this.fetchData(`${SP_BASE}/tracks/${id}?market=${this.market}`);
+      if (!res) return null;
 
       const track: SpotifyTrack = await res.json();
       return {
@@ -302,8 +267,8 @@ export class SpotifyAPI {
 
   private calculateToken(hex: Array<number>) {
     const token = hex.map((v, i) => v ^ ((i % 33) + 9));
-    const bufferToken = Buffer.from(token.map((v) => String.fromCharCode(v)).join(""), "utf8").toString("hex");
-    return bufferToken;
+    const bufferToken = Buffer.from(token.join(""), "utf8").toString("hex");
+    return Secret.fromHex(bufferToken);
   }
 
   private async getAccessTokenUrl() {
@@ -317,7 +282,6 @@ export class SpotifyAPI {
       },
     }).then((v) => v.text());
     const $ = cheerio.load(spotifyHtml);
-
     const scriptTags = $("script").toArray();
     const playerSrc = scriptTags.filter((v) => v.attribs.src?.includes("web-player/web-player."))[0].attribs.src;
     const playerScript = await fetch(playerSrc, {
