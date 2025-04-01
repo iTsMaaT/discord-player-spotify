@@ -58,7 +58,7 @@ export class SpotifyAPI {
 
       this.accessToken = {
         token: !this.useCredentials ? tokenData.accessToken : tokenData.access_token,
-        expiresAfter: !this.useCredentials ? Date.now() + tokenData.accessTokenExpirationTimestampMs : Date.now() + tokenData.expires_in * 1000,
+        expiresAfter: !this.useCredentials ? tokenData.accessTokenExpirationTimestampMs : Date.now() + tokenData.expires_in * 1000,
         type: "Bearer",
       };
     } catch (error) {
