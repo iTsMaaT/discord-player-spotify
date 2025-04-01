@@ -70,18 +70,18 @@ export class SpotifyAPI {
     }
 
     private async fetchData(apiUrl: string) {
-        await this.ensureValidToken();
-        const res = await fetch(apiUrl, {
-            headers: {
-                Authorization: `Bearer ${this.accessToken?.token}`,
-                Referer: "https://open.spotify.com/",
-                Origin: "https://open.spotify.com",
-            },
-        });
+    await this.ensureValidToken();
+    const res = await fetch(apiUrl, {
+      headers: {
+        Authorization: `Bearer ${this.accessToken?.token}`,
+        Referer: "https://open.spotify.com/",
+        Origin: "https://open.spotify.com",
+      },
+    });
 
-        if (!res.ok) throw new Error("Failed to fetch Spotify data.");
-        return res;
-    }
+    if (!res.ok) throw new Error("Failed to fetch Spotify data.");
+    return res;
+  }
 
     public async search(query: string) {
         try {
