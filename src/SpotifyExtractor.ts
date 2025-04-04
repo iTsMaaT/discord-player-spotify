@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { BaseExtractor, ExtractorInfo, ExtractorSearchContext, ExtractorStreamable, Playlist, Track, Util } from "discord-player";
+import { BaseExtractor, ExtractorInfo, ExtractorSearchContext, ExtractorStreamable, GuildQueueHistory, Playlist, Track, Util } from "discord-player";
 import type { Readable } from "stream";
 import { SpotifyAPI } from "./internal/spotify";
 import { spotifySongRegex, spotifyPlaylistRegex, spotifyAlbumRegex, isUrl, parseSpotifyUrl, market } from "./internal/helper";
+import { User } from "discord.js";
 
 type StreamFN = (url: string, track: Track) => Promise<Readable | string>;
 
@@ -47,7 +48,7 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     return !isUrl(query) || [spotifyAlbumRegex, spotifyPlaylistRegex, spotifySongRegex].some((regex) => regex.test(query));
   }
 
-  buildTrack(trackInfo: any, context: ExtractorSearchContext, playlist?: Playlist): Track {
+  buildTrack(trackInfo: any, requestedBy: User | null | undefined, playlist?: Playlist): Track {
     return new Track(this.context.player, {
       title: trackInfo.name || trackInfo.title,
       description: `${trackInfo.name || trackInfo.title} by ${
@@ -58,7 +59,7 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
       thumbnail: trackInfo.album?.images?.[0]?.url || trackInfo.thumbnail || "https://www.scdn.co/i/_global/twitter_card-default.jpg",
       duration: Util.buildTimeCode(Util.parseMS(trackInfo.duration_ms || trackInfo.duration || 0)),
       views: 0,
-      requestedBy: context.requestedBy,
+      requestedBy: requestedBy,
       source: "spotify",
       metadata: {
         source: trackInfo,
@@ -123,7 +124,7 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
       const spotifyData = await this.internal.getTrack(id);
       if (!spotifyData) return this.createResponse();
 
-      const track = this.buildTrack(spotifyData, context);
+      const track = this.buildTrack(spotifyData, context?.requestedBy);
       track.extractor = this;
 
       return this.createResponse(null, [track]);
@@ -151,7 +152,7 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     return this.createResponse(
       null,
       data.map((spotifyData) => {
-        const track = this.buildTrack(spotifyData, context);
+        const track = this.buildTrack(spotifyData, context.requestedBy);
         track.extractor = this;
         return track;
       })
@@ -169,5 +170,63 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     if (!result?.result) throw new Error("Could not bridge this track");
 
     return result.result;
+  }
+
+  public async getRelatedTracks(track: Track, history: GuildQueueHistory): Promise<ExtractorInfo> {
+    let relatedTracks: { title: string; duration: number; artist: string; url: string; thumbnail: string | null }[] | null = null;
+    if (!this.internal.useCredentials) {
+      const trackIds = Array.from(
+        new Set(
+          history.tracks
+            .toArray()
+            .filter((t: Track) => t.url.includes("spotify.com"))
+            .slice(0, 25)
+            .map((t: Track) => t.url.split("/").at(-1)?.split("?").at(0)!)
+        )
+      )
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 5);
+      if (trackIds.length) {
+        relatedTracks = await this.internal.getRecommendations(trackIds);
+      }
+    }
+    if (this.internal.useCredentials || !relatedTracks?.length) {
+      const artist = Array.from(
+        new Set(
+          history.tracks
+            .toArray()
+            .filter((t: Track) => t.author && !["unknown artist", "unknown"].includes(t.author.toLowerCase()))
+            .slice(0, 25)
+            .flatMap((t: Track) => t.author.split(",").map((author) => author.trim()))
+        )
+      )
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 1);
+
+      if (artist) {
+        relatedTracks = await this.internal.search(`artist:${artist}`);
+      }
+    }
+
+    if (!relatedTracks?.length) {
+      this.context.player.debug("Unable to fetch related tracks");
+      return this.createResponse();
+    }
+
+    return this.createResponse(
+      null,
+      relatedTracks
+        .filter(
+          (spotifyData) =>
+            !Array.from(new Set(history.tracks.toArray()))
+              .slice(0, relatedTracks.length)
+              .some((t: Track) => t.url === spotifyData.url)
+        )
+        .map((spotifyData) => {
+          const t = this.buildTrack(spotifyData, track.requestedBy);
+          t.extractor = this;
+          return t;
+        })
+    );
   }
 }

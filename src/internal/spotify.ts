@@ -16,7 +16,7 @@ export class SpotifyAPI {
   private clientId: string | undefined;
   private clientSecret: string | undefined;
   private market: string;
-  private useCredentials: boolean = false;
+  public useCredentials: boolean = false;
 
   constructor(credentials: { clientId?: string; clientSecret?: string; market?: string }) {
     if (credentials.clientId && credentials.clientSecret) {
@@ -91,7 +91,7 @@ export class SpotifyAPI {
 
   public async search(query: string) {
     try {
-      const res = await this.fetchData(`${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&market=${this.market}`);
+      const res = await this.fetchData(`${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track${this.market ? `&market=${this.market}` : ""}`);
       const data: { tracks: { items: SpotifyTrack[] } } = await res.json();
 
       return data.tracks.items.map((m) => ({
@@ -108,7 +108,7 @@ export class SpotifyAPI {
 
   public async getPlaylist(id: string) {
     try {
-      const res = await this.fetchData(`${SP_BASE}/playlists/${id}?market=${this.market}`);
+      const res = await this.fetchData(`${SP_BASE}/playlists/${id}${this.market ? `&market=${this.market}` : ""}`);
       if (!res) return null;
 
       const data: {
@@ -173,7 +173,7 @@ export class SpotifyAPI {
     if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
 
     try {
-      const res = await this.fetchData(`${SP_BASE}/albums/${id}?market=${this.market}`);
+      const res = await this.fetchData(`${SP_BASE}/albums/${id}${this.market ? `&market=${this.market}` : ""}`);
       if (!res) return null;
 
       const data: {
@@ -236,7 +236,7 @@ export class SpotifyAPI {
 
   public async getTrack(id: string) {
     try {
-      const res = await this.fetchData(`${SP_BASE}/tracks/${id}?market=${this.market}`);
+      const res = await this.fetchData(`${SP_BASE}/tracks/${id}${this.market ? `&market=${this.market}` : ""}`);
       if (!res) return null;
 
       const track: SpotifyTrack = await res.json();
@@ -250,6 +250,28 @@ export class SpotifyAPI {
           images: track.album.images,
         },
       };
+    } catch {
+      return null;
+    }
+  }
+
+  public async getRecommendations(trackIds: Array<string>, limit?: number) {
+    try {
+      if (this.useCredentials) throw new Error("getRecommendations endpoint is not supported when using credentials.");
+
+      const res = await this.fetchData(
+        `${SP_BASE}/recommendations/?seed_tracks=${trackIds.join(",")}&limit=${limit || "20-100"}${this.market ? `&market=${this.market}` : ""}`
+      );
+      if (!res) return null;
+      const data: { tracks: SpotifyTrack[] } = await res.json();
+
+      return data.tracks.map((m) => ({
+        title: m.name,
+        duration: m.duration_ms,
+        artist: m.artists.map((artist) => artist.name).join(", "),
+        url: m.external_urls?.spotify || `https://open.spotify.com/track/${m.id}`,
+        thumbnail: m.album.images?.[0]?.url || null,
+      }));
     } catch {
       return null;
     }
