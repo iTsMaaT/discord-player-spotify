@@ -260,7 +260,7 @@ export class SpotifyAPI {
       if (this.useCredentials) throw new Error("getRecommendations endpoint is not supported when using credentials.");
 
       const res = await this.fetchData(
-        `${SP_BASE}/recommendations/?seed_tracks=${trackIds.join(",")}&limit=${limit || "20-100"}${this.market ? `&market=${this.market}` : ""}`
+        `${SP_BASE}/recommendations/?seed_tracks=${trackIds.join(",")}&limit=${limit || "100"}${this.market ? `&market=${this.market}` : ""}`
       );
       if (!res) return null;
       const data: { tracks: SpotifyTrack[] } = await res.json();
