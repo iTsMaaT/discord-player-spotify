@@ -1,6 +1,6 @@
 {
   "name": "discord-player-spotify",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "A spotify extractor for discord-player",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
