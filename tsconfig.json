@@ -15,7 +15,8 @@
     },
     "exclude": [
         "node_modules",
-        "dist/**/*.ts"
+        "dist/**/*.ts",
+        "extractorpack.extconfig.js"
       ],
       "include": [
         "tsup.config.ts",

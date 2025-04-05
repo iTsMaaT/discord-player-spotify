@@ -23,6 +23,7 @@ export default [...compat.extends(
         "node_modules",
         "eslint.config.mjs",
         "tsup.config.ts",
+        "extractorpack.extconfig.js",
     ],
     plugins: {
         "@typescript-eslint": typescriptEslint,
