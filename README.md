@@ -22,6 +22,20 @@ const player = new Player(client, {});
 await player.extractors.register(SpotifyExtractor, { /* options */ });
 ```
 
+## Supported features
+
+| Feature | Supported |
+| --- | --- |
+| Single tracks | ✅ |
+| Playlists | ✅ |
+| Search | ✅ |
+| Direct streaming | ❌ |
+| Can be used as a bridge | ❌ |
+| Can bridge to ... | ✅ |
+| Autoplay | ✅* |
+
+\* Autoplay works differently weither you use credentials or not.
+
 ## Options
 
 | Option | Type | Default | Required | Description |
