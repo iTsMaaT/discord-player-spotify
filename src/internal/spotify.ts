@@ -91,7 +91,7 @@ export class SpotifyAPI {
 
     public async search(query: string) {
         try {
-            const res = await this.fetchData(`${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&market=${this.market}`);
             const data: { tracks: { items: SpotifyTrack[] } } = await res.json();
 
             return data.tracks.items.map((m) => ({
@@ -108,7 +108,7 @@ export class SpotifyAPI {
 
     public async getPlaylist(id: string) {
         try {
-            const res = await this.fetchData(`${SP_BASE}/playlists/${id}${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/playlists/${id}?market=${this.market}`);
             if (!res) return null;
 
             const data: {
@@ -173,7 +173,7 @@ export class SpotifyAPI {
         if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
 
         try {
-            const res = await this.fetchData(`${SP_BASE}/albums/${id}${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/albums/${id}?market=${this.market}`);
             if (!res) return null;
 
             const data: {
@@ -236,7 +236,7 @@ export class SpotifyAPI {
 
     public async getTrack(id: string) {
         try {
-            const res = await this.fetchData(`${SP_BASE}/tracks/${id}${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/tracks/${id}?market=${this.market}`);
             if (!res) return null;
 
             const track: SpotifyTrack = await res.json();
@@ -260,7 +260,7 @@ export class SpotifyAPI {
             if (this.useCredentials) throw new Error("getRecommendations endpoint is not supported when using credentials.");
 
             const res = await this.fetchData(
-                `${SP_BASE}/recommendations/?seed_tracks=${trackIds.join(",")}&limit=${limit || "100"}${this.market ? `&market=${this.market}` : ""}`,
+                `${SP_BASE}/recommendations/?seed_tracks=${trackIds.join(",")}&limit=${limit || "100"}&market=${this.market}`,
             );
             if (!res) return null;
             const data: { tracks: SpotifyTrack[] } = await res.json();
