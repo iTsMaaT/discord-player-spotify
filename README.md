@@ -22,27 +22,13 @@ const player = new Player(client, {});
 await player.extractors.register(SpotifyExtractor, { /* options */ });
 ```
 
-## Supported features
-
-| Feature | Supported |
-| --- | --- |
-| Single tracks | ✅ |
-| Playlists | ✅ |
-| Search | ✅ |
-| Direct streaming | ❌ |
-| Can be used as a bridge | ❌ |
-| Can bridge to ... | ✅ |
-| Autoplay | ✅* |
-
-\* Autoplay works differently weither you use credentials or not.
-
 ## Options
 
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | clientId | string | null | No | Your Spotify client id |
 | clientSecret | string | null | No | Your Spotify client secret |
-| market | string | US | No | The market to use for the Spotify API. |
+| market | string | "" | No | The market to use for the Spotify API. |
 | createStream(ext: SpotifyExtractor, url: string) => Promise<Readable \| string>; | function | null | No | A function that returns a Readable stream or a string URL to the stream. |
 
 [Information on the market parameter and the reason why it is required.](https://developer.spotify.com/documentation/web-api/concepts/track-relinking)
