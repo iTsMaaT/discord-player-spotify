@@ -108,7 +108,7 @@ export class SpotifyAPI {
 
     public async getPlaylist(id: string) {
         try {
-            const res = await this.fetchData(`${SP_BASE}/playlists/${id}${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/playlists/${id}${this.market ? `?market=${this.market}` : ""}`);
             if (!res) return null;
 
             const data: {
@@ -144,7 +144,9 @@ export class SpotifyAPI {
                 }
             }
 
-            const tracks = t.map(({ track: m }) => ({
+            const tracks = t
+            .filter(({ track: m }) => m?.name && m?.artists)
+            .map(({ track: m }) => ({
                 name: m.name,
                 duration_ms: m.duration_ms,
                 artists: m.artists,
@@ -173,7 +175,7 @@ export class SpotifyAPI {
         if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
 
         try {
-            const res = await this.fetchData(`${SP_BASE}/albums/${id}${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/albums/${id}${this.market ? `?market=${this.market}` : ""}`);
             if (!res) return null;
 
             const data: {
@@ -209,7 +211,9 @@ export class SpotifyAPI {
                 }
             }
 
-            const tracks = t.map((m) => ({
+            const tracks = t
+            .filter(( m ) => m?.name && m?.artists)
+            .map((m) => ({
                 name: m.name,
                 duration_ms: m.duration_ms,
                 artists: m.artists,
@@ -236,7 +240,7 @@ export class SpotifyAPI {
 
     public async getTrack(id: string) {
         try {
-            const res = await this.fetchData(`${SP_BASE}/tracks/${id}${this.market ? `&market=${this.market}` : ""}`);
+            const res = await this.fetchData(`${SP_BASE}/tracks/${id}${this.market ? `?market=${this.market}` : ""}`);
             if (!res) return null;
 
             const track: SpotifyTrack = await res.json();

@@ -34,7 +34,7 @@ await player.extractors.register(SpotifyExtractor, { /* options */ });
 | Can bridge to ... | ✅ |
 | Autoplay | ✅* |
 
-\* Autoplay works differently weither you use credentials or not.
+\* Autoplay works differently whether you use credentials or not.
 
 ## Options
 
