@@ -145,17 +145,17 @@ export class SpotifyAPI {
             }
 
             const tracks = t
-            .filter(({ track: m }) => m?.name && m?.artists)
-            .map(({ track: m }) => ({
-                name: m.name,
-                duration_ms: m.duration_ms,
-                artists: m.artists,
-                external_urls: m.external_urls,
-                id: m.id,
-                album: {
-                    images: m.album.images,
-                },
-            }));
+                .filter(({ track: m }) => m?.name && m?.artists)
+                .map(({ track: m }) => ({
+                    name: m.name,
+                    duration_ms: m.duration_ms,
+                    artists: m.artists,
+                    external_urls: m.external_urls,
+                    id: m.id,
+                    album: {
+                        images: m.album.images,
+                    },
+                }));
 
             if (!tracks.length) return null;
             return {
@@ -212,17 +212,17 @@ export class SpotifyAPI {
             }
 
             const tracks = t
-            .filter(( m ) => m?.name && m?.artists)
-            .map((m) => ({
-                name: m.name,
-                duration_ms: m.duration_ms,
-                artists: m.artists,
-                external_urls: m.external_urls,
-                id: m.id,
-                album: {
-                    images: data.images || [],
-                },
-            }));
+                .filter((m) => m?.name && m?.artists)
+                .map((m) => ({
+                    name: m.name,
+                    duration_ms: m.duration_ms,
+                    artists: m.artists,
+                    external_urls: m.external_urls,
+                    id: m.id,
+                    album: {
+                        images: data.images || [],
+                    },
+                }));
 
             if (!tracks.length) return null;
             return {
