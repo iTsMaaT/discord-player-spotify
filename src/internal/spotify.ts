@@ -62,8 +62,20 @@ export class SpotifyAPI {
                 type: "Bearer",
             };
         } catch (error) {
-            console.error("Error requesting Spotify access token:", error);
-            throw error;
+            try {
+                const response = await fetch("https://open.spotify.com/");
+                const body = await response.text();
+                const token = body.match(/"accessToken":"(.+?)"/)?.[1];
+                const expiresAfter = Number(body.match(/"accessTokenExpirationTimestampMs":(\d+)/)?.[1]) || 1000 * 60 * 60;
+                if (!token) throw new Error("Failed to retrieve access token from Spotify.");
+                this.accessToken = {
+                    token,
+                    expiresAfter: expiresAfter,
+                    type: "Bearer",
+                };
+            } catch {
+                throw new Error("Failed to retrieve access token from Spotify.");
+            }
         }
     }
 
@@ -282,7 +294,7 @@ export class SpotifyAPI {
     }
 
     private buildTokenUrl() {
-        const baseUrl = new URL("https://open.spotify.com/get_access_token");
+        const baseUrl = new URL("https://open.spotify.com/api/token");
         baseUrl.searchParams.set("reason", "init");
         baseUrl.searchParams.set("productType", "web-player");
         return baseUrl;
@@ -324,10 +336,11 @@ export class SpotifyAPI {
         const { searchParams } = url;
 
         const cTime = Date.now();
-        const sTime = await fetch("https://open.spotify.com/server-time", {
+        const sTime = await fetch("https://open.spotify.com/api/server-time/", {
             headers: {
                 Referer: "https://open.spotify.com/",
                 Origin: "https://open.spotify.com",
+                "User-Agent": UA,
             },
         })
             .then((v) => v.json())
