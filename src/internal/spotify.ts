@@ -73,7 +73,7 @@ export class SpotifyAPI {
                     expiresAfter: expiresAfter,
                     type: "Bearer",
                 };
-            } catch {
+            } catch (error) {
                 throw new Error("Failed to retrieve access token from Spotify.");
             }
         }
@@ -328,9 +328,14 @@ export class SpotifyAPI {
             },
         }).then((v) => v.text());
 
-        const playerVerSplit = playerScript.split("buildVer");
-        const versionString = `{"buildVer"${playerVerSplit[1].split("}")[0].replace("buildDate", "\"buildDate\"")}}`;
-        const version = JSON.parse(versionString);
+        const versionMatch = playerScript.match(/buildVer["']?\s*:\s*["']?([^,"'}\s]+)["']?,\s*buildDate["']?\s*:\s*["']?([^,"'}\s]+)["']?/);
+        if (!versionMatch) 
+            throw new Error("Could not extract buildVer/buildDate from player script");
+    
+        const version = {
+            buildVer: versionMatch[1],
+            buildDate: versionMatch[2],
+        };
 
         const url = this.buildTokenUrl();
         const { searchParams } = url;
