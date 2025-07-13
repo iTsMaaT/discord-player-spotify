@@ -368,9 +368,8 @@ export class SpotifyAPI {
                 });
                 return playlist;
             }
+            default: return null;
         }
-
-        return null;
     }
 
     private buildTokenUrl() {
