@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Secret, TOTP } from "otpauth";
 import { UA, market } from "./helper";
 import { parse } from "node-html-parser";
@@ -291,6 +292,85 @@ export class SpotifyAPI {
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Returns the Spotify embed link for a given url and type.
+     */
+    public static getEmbedLink(url: string, type: "track" | "playlist" | "album"): string {
+        const urlObject = new URL(url);
+        const id = urlObject.pathname.split("/").pop();
+        return `https://open.spotify.com/embed/${type}/${id}?utm_source=generator`;
+    }
+
+    /**
+     * Fetches and parses track/playlist/album info from the Spotify embed page.
+     */
+    public static async getTracksFromEmbed(
+        url: string,
+        type: "track" | "playlist" | "album" = "track",
+    ): Promise<any | null> {
+        const embedUrl = SpotifyAPI.getEmbedLink(url, type);
+        // Optionally remove or replace console.log in production
+        // console.log(embedUrl);
+        const html = await fetch(embedUrl).then(r => r.text());
+        const root = parse(html);
+        let jsonData: any;
+        const track: any = {};
+        const playlist: any = {};
+
+        const scriptTag = root.querySelector("script#__NEXT_DATA__");
+        if (scriptTag)
+            jsonData = JSON.parse(scriptTag.text);
+        else
+            return null;
+        // Optionally remove or replace console.log in production
+        // console.log(jsonData);
+
+        switch (type) {
+            case "track": {
+                track.title = jsonData.props.pageProps.state.data.entity.name;
+                track.artist = jsonData.props.pageProps.state.data.entity.artists[0].name;
+                track.url = `https://open.spotify.com/track/${jsonData.props.pageProps.state.data.entity.uri.split(":").pop()}`;
+                track.thumbnail = jsonData.props.pageProps.state.data.entity.visualIdentity.image[0].url;
+                track.duration = jsonData.props.pageProps.state.data.entity.duration;
+                return track;
+            }
+            case "playlist": {
+                playlist.title = jsonData.props.pageProps.state.data.entity.name;
+                playlist.artist = jsonData.props.pageProps.state.data.entity.subtitle;
+                playlist.url = `https://open.spotify.com/playlist/${jsonData.props.pageProps.state.data.entity.uri.split(":").pop()}`;
+                playlist.thumbnail = jsonData.props.pageProps.state.data.entity.coverArt.sources[0].url;
+                playlist.tracks = jsonData.props.pageProps.state.data.entity.trackList.map((item: any) => {
+                    const t: any = {};
+                    t.title = item.title;
+                    t.artist = item.subtitle || "Unknown Artist";
+                    t.url = `https://open.spotify.com/track/${item.uri.split(":").pop()}`;
+                    t.thumbnail = jsonData.props.pageProps.state.data.entity.coverArt.sources[0].url;
+                    t.duration = item.duration;
+                    return t;
+                });
+                return playlist;
+            }
+            case "album": {
+                playlist.title = jsonData.props.pageProps.state.data.entity.name;
+                playlist.artist = jsonData.props.pageProps.state.data.entity.subtitle;
+                playlist.url = `https://open.spotify.com/album/${jsonData.props.pageProps.state.data.entity.uri.split(":").pop()}`;
+                playlist.thumbnail = jsonData.props.pageProps.state.data.entity.visualIdentity.image[0].url;
+                playlist.tracks = jsonData.props.pageProps.state.data.entity.trackList.map((item: any) => {
+                    const t: any = {};
+                    t.title = item.title;
+                    t.artist = item.subtitle || "Unknown Artist";
+                    t.url = `https://open.spotify.com/track/${item.uri.split(":").pop()}`;
+                    t.thumbnail = jsonData.props.pageProps.state.data.entity.visualIdentity.image[0].url;
+                    t.duration = item.duration;
+                    return t;
+                });
+                return playlist;
+            }
+        }
+
+        return null;
     }
 
     private buildTokenUrl() {

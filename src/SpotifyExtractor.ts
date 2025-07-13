@@ -17,7 +17,7 @@ export interface SpotifyExtractorInit {
 export { parseSpotifyUrl };
 
 export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
-    public static identifier = "com.discord-player.spotifyextractor" as const;
+    public static identifier = "com.discord-player.itsmaat.spotifyextractor" as const;
     private _stream!: StreamFN;
     private _credentials = {
         clientId: this.options.clientId || process.env.DP_SPOTIFY_CLIENT_ID || "",
@@ -121,9 +121,20 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     public async handle(query: string, context: ExtractorSearchContext): Promise<ExtractorInfo> {
         const { id } = parseSpotifyUrl(query);
         if (spotifySongRegex.test(query)) {
-            const spotifyData = await this.internal.getTrack(id);
-            if (!spotifyData) return this.createResponse();
-
+            let spotifyData = await this.internal.getTrack(id);
+            if (!spotifyData) {
+                // fallback to embed
+                const embedData = await SpotifyAPI.getTracksFromEmbed(query, "track");
+                if (!embedData) return this.createResponse();
+                spotifyData = {
+                    name: embedData.title,
+                    duration_ms: embedData.duration,
+                    artists: [{ id: "", name: embedData.artist }],
+                    external_urls: { spotify: embedData.url },
+                    id,
+                    album: { images: [{ url: embedData.thumbnail, height: 0, width: 0 }] },
+                };
+            }
             const track = this.buildTrack(spotifyData, context?.requestedBy);
             track.extractor = this;
 
@@ -131,16 +142,54 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
         }
 
         if (spotifyPlaylistRegex.test(query)) {
-            const spotifyPlaylist = await this.internal.getPlaylist(id);
-            if (!spotifyPlaylist) return this.createResponse();
+            let spotifyPlaylist = await this.internal.getPlaylist(id);
+            if (!spotifyPlaylist) {
+                // fallback to embed
+                const embedData = await SpotifyAPI.getTracksFromEmbed(query, "playlist");
+                if (!embedData) return this.createResponse();
+                spotifyPlaylist = {
+                    name: embedData.title,
+                    author: embedData.artist,
+                    thumbnail: embedData.thumbnail,
+                    id,
+                    url: embedData.url,
+                    tracks: (embedData.tracks || []).map((t: any) => ({
+                        name: t.title,
+                        duration_ms: t.duration,
+                        artists: [{ name: t.artist }],
+                        external_urls: { spotify: t.url },
+                        id: t.url.split("/").pop(),
+                        album: { images: [{ url: t.thumbnail }] },
+                    })),
+                };
+            }
 
             const playlist = this.buildPlaylist(spotifyPlaylist, context, "playlist");
             return this.createResponse(playlist, playlist.tracks);
         }
 
         if (spotifyAlbumRegex.test(query)) {
-            const spotifyAlbum = await this.internal.getAlbum(id);
-            if (!spotifyAlbum) return this.createResponse();
+            let spotifyAlbum = await this.internal.getAlbum(id);
+            if (!spotifyAlbum) {
+                // fallback to embed
+                const embedData = await SpotifyAPI.getTracksFromEmbed(query, "album");
+                if (!embedData) return this.createResponse();
+                spotifyAlbum = {
+                    name: embedData.title,
+                    author: embedData.artist,
+                    thumbnail: embedData.thumbnail,
+                    id,
+                    url: embedData.url,
+                    tracks: (embedData.tracks || []).map((t: any) => ({
+                        name: t.title,
+                        duration_ms: t.duration,
+                        artists: [{ name: t.artist }],
+                        external_urls: { spotify: t.url },
+                        id: t.url.split("/").pop(),
+                        album: { images: [{ url: t.thumbnail }] },
+                    })),
+                };
+            }
 
             const playlist = this.buildPlaylist(spotifyAlbum, context, "album");
             return this.createResponse(playlist, playlist.tracks);
