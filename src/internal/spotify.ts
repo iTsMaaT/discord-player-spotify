@@ -185,7 +185,7 @@ export class SpotifyAPI {
     }
 
     public async getAlbum(id: string) {
-        if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
+        // if (!this.clientId || !this.clientSecret) throw new Error("Spotify clientId and clientSecret are required.");
 
         try {
             const res = await this.fetchData(`${SP_BASE}/albums/${id}${this.market ? `?market=${this.market}` : ""}`);
