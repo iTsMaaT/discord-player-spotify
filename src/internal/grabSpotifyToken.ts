@@ -70,54 +70,58 @@ function jsLiteralToObject(str: string) {
 
     astWalker(ast);
 
-    return arrays[0] as unknown as { secret: string, version: number }[];
+    return arrays[0] as unknown as SpotifySecret[];
 }
+export type SpotifySecret = { secret: string, version: number }
+export async function grabSpotifyAnonToken(sec?: SpotifySecret[]) {
+    let secret: SpotifySecret[] | undefined = sec;
 
-export async function grabSpotifyAnonToken() {
-    const spotifyHTML = await fetch(SPOTIFY_URLS[Math.floor(Math.random() * SPOTIFY_URLS.length)], {
-        headers: {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+    if (!secret) {
+        const spotifyHTML = await fetch(SPOTIFY_URLS[Math.floor(Math.random() * SPOTIFY_URLS.length)], {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+            }
+        })
+            .then(res => {
+                if (!res.ok) throw new Error(`Failed to fetch Spotify page: ${res.statusText}`);
+                return res.text();
+            });
+
+        const parsed = parse(spotifyHTML);
+
+        const scriptTags = parsed.querySelectorAll("script");
+
+        const webPlayer = scriptTags.find(tag => tag.attributes.src?.includes("web-player."));
+
+        if (!webPlayer) {
+            throw new Error("Unable to extract web player script");
         }
-    })
-        .then(res => {
-            if (!res.ok) throw new Error(`Failed to fetch Spotify page: ${res.statusText}`);
+
+        const webPlayerUrl = webPlayer.attributes.src;
+        const webPlayerScript = await fetch(webPlayerUrl, {
+            headers: {
+                "User-Agent": USER_AGENT
+            }
+        }).then(res => {
+            if (!res.ok) throw new Error(`Failed to fetch web player script: ${res.statusText}`);
             return res.text();
         });
 
-    const parsed = parse(spotifyHTML);
+        const arrayWithObjectRegex = /\[(?:[^\[\]]|\[[^\[\]]*\])*\]/gm;
 
-    const scriptTags = parsed.querySelectorAll("script");
+        const allArrays = webPlayerScript.match(arrayWithObjectRegex)?.filter(v => v.includes("secret"))
+        const secretRaw = allArrays?.[0];
 
-    const webPlayer = scriptTags.find(tag => tag.attributes.src?.includes("web-player."));
+        if (!secretRaw) throw new Error("Unable to extract secret");
 
-    if (!webPlayer) {
-        throw new Error("Unable to extract web player script");
+        secret = jsLiteralToObject(secretRaw).map(v => ({ secret: transformSecret(v.secret), version: v.version }));
     }
-
-    const webPlayerUrl = webPlayer.attributes.src;
-    const webPlayerScript = await fetch(webPlayerUrl, {
-        headers: {
-            "User-Agent": USER_AGENT
-        }
-    }).then(res => {
-        if (!res.ok) throw new Error(`Failed to fetch web player script: ${res.statusText}`);
-        return res.text();
-    });
-
-    const arrayWithObjectRegex = /\[(?:[^\[\]]|\[[^\[\]]*\])*\]/gm;
-
-    const allArrays = webPlayerScript.match(arrayWithObjectRegex)?.filter(v => v.includes("secret"))
-    const secret = allArrays?.[0];
-
-    if (!secret) throw new Error("Unable to extract secret");
-
-    const parsedSecret = jsLiteralToObject(secret).map(v => ({ secret: transformSecret(v.secret), version: v.version }));
 
     const totp = new TOTP({
         algorithm: "SHA1",
         digits: 6,
         period: 30,
-        secret: Secret.fromHex(parsedSecret[0].secret)
+        secret: Secret.fromHex(secret[0].secret)
     });
 
     const serverTime = Math.floor(Date.now() / 1000);
@@ -133,9 +137,7 @@ export async function grabSpotifyAnonToken() {
     searchParams.set("productType", "web-player");
     searchParams.set("totp", totpClient);
     searchParams.set("totpServer", totpServer);
-    searchParams.set("totpVer", parsedSecret[0].version.toString());
-
-    console.log("SPOTIFY TOKEN URL", url.toString());
+    searchParams.set("totpVer", secret[0].version.toString());
 
     const tokenResponse = await fetch(url.toString(), {
         headers: {
@@ -148,6 +150,6 @@ export async function grabSpotifyAnonToken() {
 
     return {
         tokens: tokenResponse as AnonymousSpotifyTokenResponse,
-        secrets: parsedSecret // cache this for around 6 hours
+        secrets: secret // cache this for around 6 hours
     }
 }
