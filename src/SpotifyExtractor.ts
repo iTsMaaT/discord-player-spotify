@@ -3,6 +3,7 @@ import { BaseExtractor, ExtractorInfo, ExtractorSearchContext, ExtractorStreamab
 import type { Readable } from "stream";
 import { SpotifyAPI } from "./internal/spotify";
 import { spotifySongRegex, spotifyPlaylistRegex, spotifyAlbumRegex, isUrl, parseSpotifyUrl, market } from "./internal/helper";
+import { grabSpotifyAnonToken } from "./internal/grabSpotifyToken";
 import { User } from "discord.js";
 
 type StreamFN = (url: string, track: Track) => Promise<Readable | string>;
@@ -14,7 +15,7 @@ export interface SpotifyExtractorInit {
   createStream?: (ext: SpotifyExtractor, url: string) => Promise<Readable | string>;
 }
 
-export { parseSpotifyUrl };
+export { parseSpotifyUrl, grabSpotifyAnonToken };
 
 export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     public static identifier = "com.discord-player.itsmaat.spotifyextractor" as const;
