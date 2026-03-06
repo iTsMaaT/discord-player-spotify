@@ -17,7 +17,7 @@ function transformSecret(secret: string) {
     return hex;
 }
 
-export interface AnonmousSpotifyTokenResponse {
+export interface AnonymousSpotifyTokenResponse {
     clientId: string;
     accessToken: string;
     accessTokenExpirationTimestampMs: number;
@@ -147,7 +147,7 @@ export async function grabSpotifyAnonToken() {
     });
 
     return {
-        tokens: tokenResponse as AnonmousSpotifyTokenResponse,
+        tokens: tokenResponse as AnonymousSpotifyTokenResponse,
         secrets: parsedSecret // cache this for around 6 hours
     }
 }
