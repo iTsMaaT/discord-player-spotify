@@ -7,9 +7,14 @@ import { Buffer } from "node:buffer";
 const SP_BASE = "https://api.spotify.com/v1";
 
 interface SP_ACCESS_TOKEN {
-  token: string;
-  expiresAfter: number;
-  type: "Bearer";
+    token: string;
+    expiresAfter: number;
+    type: "Bearer";
+}
+
+interface SpotifySecret {
+    version: number;
+    secret: number[];
 }
 
 export class SpotifyAPI {
@@ -18,6 +23,15 @@ export class SpotifyAPI {
     private clientSecret: string | undefined;
     private market: string;
     public useCredentials: boolean = false;
+
+    /**
+     * Secrets URL from https://github.com/Thereallo1026/spotify-secrets
+     */
+    private readonly SECRETS_URL = 'https://github.com/Thereallo1026/spotify-secrets/blob/main/secrets/secretBytes.json?raw=true';
+    private readonly CACHE_DURATION = 30 * 60 * 1000;   // 30 minutes
+
+    private cachedSecrets: SpotifySecret[] | null = null;
+    private secretsCacheTime: number = 0;
 
     constructor(credentials: { clientId?: string; clientSecret?: string; market?: string }) {
         if (credentials.clientId && credentials.clientSecret) {
@@ -63,20 +77,7 @@ export class SpotifyAPI {
                 type: "Bearer",
             };
         } catch (error) {
-            try {
-                const response = await fetch("https://open.spotify.com/");
-                const body = await response.text();
-                const token = body.match(/"accessToken":"(.+?)"/)?.[1];
-                const expiresAfter = Number(body.match(/"accessTokenExpirationTimestampMs":(\d+)/)?.[1]) || 1000 * 60 * 60;
-                if (!token) throw new Error("Failed to retrieve access token from Spotify.");
-                this.accessToken = {
-                    token,
-                    expiresAfter: expiresAfter,
-                    type: "Bearer",
-                };
-            } catch (error) {
-                throw new Error("Failed to retrieve access token from Spotify.");
-            }
+            await this.getTokenFallback();
         }
     }
 
@@ -125,16 +126,16 @@ export class SpotifyAPI {
             if (!res) return null;
 
             const data: {
-        external_urls: { spotify: string };
-        owner: { display_name: string };
-        id: string;
-        name: string;
-        images: { url: string }[];
-        tracks: {
-          items: { track: SpotifyTrack }[];
-          next?: string;
-        };
-      } = await res.json();
+                external_urls: { spotify: string };
+                owner: { display_name: string };
+                id: string;
+                name: string;
+                images: { url: string }[];
+                tracks: {
+                    items: { track: SpotifyTrack }[];
+                    next?: string;
+                };
+            } = await res.json();
 
             if (!data.tracks.items.length) return null;
 
@@ -192,16 +193,16 @@ export class SpotifyAPI {
             if (!res) return null;
 
             const data: {
-        external_urls: { spotify: string };
-        artists: { name: string }[];
-        id: string;
-        name: string;
-        images: { url: string }[];
-        tracks: {
-          items: SpotifyTrack[];
-          next?: string;
-        };
-      } = await res.json();
+                external_urls: { spotify: string };
+                artists: { name: string }[];
+                id: string;
+                name: string;
+                images: { url: string }[];
+                tracks: {
+                    items: SpotifyTrack[];
+                    next?: string;
+                };
+            } = await res.json();
 
             if (!data.tracks.items.length) return null;
 
@@ -379,98 +380,284 @@ export class SpotifyAPI {
         return baseUrl;
     }
 
-    private calculateToken(hex: Array<number>) {
-        const token = hex.map((v, i) => v ^ ((i % 33) + 9));
+    private calculateToken(hex: Array<number>, version: number = 33) {
+        const token = hex.map((v, i) => v ^ ((i % version) + 9));
         const bufferToken = Buffer.from(token.join(""), "utf8").toString("hex");
         return Secret.fromHex(bufferToken);
+    }
+
+    private async getTokenFallback() {
+        try {
+            const response = await fetch("https://open.spotify.com/", {
+                headers: {
+                    "User-Agent": UA,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.5",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "DNT": "1",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1"
+                }
+            });
+
+            const body = await response.text();
+
+            // Trying multiple patterns to extract the token
+            let token = body.match(/"accessToken":"([^"]+)"/)?.[1];
+
+            if (!token) {
+                token = body.match(/accessToken["']?\s*:\s*["']([^"']+)["']/)?.[1];
+            }
+            if (!token) {
+                token = body.match(/token["']?\s*:\s*["']([^"']+)["']/)?.[1];
+            }
+
+            // Trying multiple patterns to extract the expiration time
+            let expiresAfter = Number(body.match(/"accessTokenExpirationTimestampMs":(\d+)/)?.[1]);
+            if (!expiresAfter) {
+                expiresAfter = Number(body.match(/accessTokenExpirationTimestampMs["']?\s*:\s*(\d+)/)?.[1]);
+            }
+            if (!expiresAfter) {
+                // Default to 1 hour
+                expiresAfter = Date.now() + 1000 * 60 * 60;
+            }
+
+            if (!token) throw new Error("Could not extract access token from Spotify homepage");
+
+            this.accessToken = {
+                token,
+                expiresAfter: expiresAfter - 5000,
+                type: "Bearer",
+            };
+        } catch (error) {
+            throw new Error("Failed to retrieve access token from Spotify.");
+        }
+    }
+
+    /**
+     * Fetch the latest secrets from remote URL
+     */
+    private async fetchSecretsFromRemote(): Promise<SpotifySecret[]> {
+        try {
+            const response = await fetch(this.SECRETS_URL, {
+                headers: {
+                    'User-Agent': UA,
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const secrets = await response.json() as unknown;
+
+            if (!Array.isArray(secrets) || secrets.length === 0) {
+                throw new Error('Invalid secrets format received');
+            }
+
+            // Validate secrets format
+            const validatedSecrets: SpotifySecret[] = [];
+
+            for (const secret of secrets) {
+                if (
+                    typeof secret === 'object'
+                    && secret !== null
+                    && typeof (secret as any).version === 'number'
+                    && Array.isArray((secret as any).secret)
+                ) {
+                    validatedSecrets.push(secret as SpotifySecret);
+                } else {
+                    throw new Error('Invalid secret format');
+                }
+            }
+
+            return validatedSecrets;
+        } catch (error) {
+            // console.log(`[Spotify] Failed to fetch secrets from remote: ${error}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Get secrets (prioritize cache, re-fetch when expired)
+     */
+    private async getSecrets(): Promise<SpotifySecret[]> {
+        const now = Date.now();
+
+        // Check if cache is valid
+        if (this.cachedSecrets && (now - this.secretsCacheTime) < this.CACHE_DURATION) {
+            // console.log('[Spotify] Using cached secrets');
+            return this.cachedSecrets;
+        }
+
+        try {
+            // Try to fetch from remote
+            const secrets = await this.fetchSecretsFromRemote();
+
+            // Update cache
+            this.cachedSecrets = secrets;
+            this.secretsCacheTime = now;
+
+            // console.log(`[Spotify] Successfully fetched ${secrets.length} secrets from remote`);
+            return secrets;
+        } catch (error) {
+            // console.log(`[Spotify] Failed to fetch remote secrets: ${error}`);
+
+            // If there's old cache, use old cache
+            if (this.cachedSecrets) {
+                // console.log('[Spotify] Using expired cache as fallback');
+                return this.cachedSecrets;
+            }
+
+            // No available secrets, throw error
+            throw new Error('No secrets available and unable to fetch from remote');
+        }
+    }
+
+    /**
+     * Get the first available secret
+     */
+    private async getFirstSecret(): Promise<SpotifySecret> {
+        const secrets = await this.getSecrets();
+
+        if (secrets.length === 0) {
+            throw new Error('No secrets available');
+        }
+
+        return secrets[0];
+    }
+
+    /**
+     * Remove a failed secret from the cache
+     */
+    private removeFailedSecret(failedSecret: SpotifySecret): void {
+        if (this.cachedSecrets) {
+            this.cachedSecrets = this.cachedSecrets.filter(
+                secret => !(secret.version === failedSecret.version &&
+                    JSON.stringify(secret.secret) === JSON.stringify(failedSecret.secret))
+            );
+            // console.log(`[Spotify] Removed failed secret version ${failedSecret.version}`);
+        }
+    }
+
+    /**
+     * Force refresh secrets cache
+     */
+    private async refreshSecrets(): Promise<SpotifySecret[]> {
+        try {
+            const secrets = await this.fetchSecretsFromRemote();
+            this.cachedSecrets = secrets;
+            this.secretsCacheTime = Date.now();
+            // console.log('[Spotify] Successfully refreshed secrets cache');
+            return secrets;
+        } catch (error) {
+            // console.log(`[Spotify] Failed to refresh secrets: ${error}`);
+            throw error;
+        }
     }
 
     private async getAccessTokenUrl() {
         if (this.useCredentials) return "https://accounts.spotify.com/api/token?grant_type=client_credentials";
 
-        const token = this.calculateToken([12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54]);
+        let hasRefreshedSecrets = false;
 
-        const spotifyHtml = await fetch("https://open.spotify.com", {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-            },
-        }).then((v) => v.text());
-        const root = parse(spotifyHtml);
-        const scriptTags = root.querySelectorAll("script");
-        const playerSrc = scriptTags.find((v) => v.getAttribute("src")?.includes("web-player/web-player."))?.getAttribute("src");
-        if (!playerSrc) throw new Error("Could not find player script source");
-        const playerScript = await fetch(playerSrc, {
-            headers: {
-                Dnt: "1",
-                Referer: "https://open.spotify.com/",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-            },
-        }).then((v) => v.text());
+        while (true) {
+            try {
+                // Try to get the first available secret
+                const selectedSecret = await this.getFirstSecret();
+                const token = this.calculateToken(selectedSecret.secret, selectedSecret.version);
+                // console.log(`[Spotify] Using secret version ${selectedSecret.version}`);
 
-        const versionMatch = playerScript.match(/buildVer["']?\s*:\s*["']?([^,"'}\s]+)["']?,\s*buildDate["']?\s*:\s*["']?([^,"'}\s]+)["']?/);
-        if (!versionMatch) 
-            throw new Error("Could not extract buildVer/buildDate from player script");
-    
-        const version = {
-            buildVer: versionMatch[1],
-            buildDate: versionMatch[2],
-        };
+                const url = this.buildTokenUrl();
+                const { searchParams } = url;
 
-        const url = this.buildTokenUrl();
-        const { searchParams } = url;
+                const cTime = Date.now();
+                const sTime = await fetch("https://open.spotify.com/api/server-time/", {
+                    headers: {
+                        Referer: "https://open.spotify.com/",
+                        Origin: "https://open.spotify.com",
+                        "User-Agent": UA,
+                    },
+                })
+                    .then((v) => v.json())
+                    .then((v: any) => v.serverTime);
 
-        const cTime = Date.now();
-        const sTime = await fetch("https://open.spotify.com/api/server-time/", {
-            headers: {
-                Referer: "https://open.spotify.com/",
-                Origin: "https://open.spotify.com",
-                "User-Agent": UA,
-            },
-        })
-            .then((v) => v.json())
-            .then((v) => v.serverTime);
+                const totp = new TOTP({
+                    secret: token,
+                    period: 30,
+                    digits: 6,
+                    algorithm: "SHA1",
+                });
 
-        const totp = new TOTP({
-            secret: token,
-            period: 30,
-            digits: 6,
-            algorithm: "SHA1",
-        });
+                const totpServer = totp.generate({
+                    timestamp: sTime * 1e3,
+                });
+                const totpClient = totp.generate({
+                    timestamp: cTime,
+                });
 
-        const totpServer = totp.generate({
-            timestamp: sTime * 1e3,
-        });
-        const totpClient = totp.generate({
-            timestamp: cTime,
-        });
+                searchParams.set("sTime", String(sTime));
+                searchParams.set("cTime", String(cTime));
+                searchParams.set("totp", totpClient);
+                searchParams.set("totpServer", totpServer);
+                searchParams.set("totpVer", "5");
+                searchParams.set("buildVer", String(selectedSecret.version));
+                // searchParams.set("buildDate", new Date().toISOString().split('T')[0].replace(/-/g, ''));
 
-        searchParams.set("sTime", String(sTime));
-        searchParams.set("cTime", String(cTime));
-        searchParams.set("totp", totpClient);
-        searchParams.set("totpServer", totpServer);
-        searchParams.set("totpVer", "5");
-        searchParams.set("buildVer", version.buildVer);
-        searchParams.set("buildDate", version.buildDate);
+                return url;
+            } catch (error) {
+                // console.log(`[Spotify] Secret failed: ${error}`);
 
-        return url;
+                // If we have cached secrets, try to remove the failed one and continue
+                if (this.cachedSecrets && this.cachedSecrets.length > 0) {
+                    const failedSecret = this.cachedSecrets[0];
+                    this.removeFailedSecret(failedSecret);
+
+                    // If there are still secrets left, continue the loop
+                    if (this.cachedSecrets.length > 0) {
+                        // console.log(`[Spotify] ${this.cachedSecrets.length} secrets remaining, trying next one...`);
+                        continue;
+                    }
+                }
+
+                // No more secrets available
+                if (!hasRefreshedSecrets) {
+                    // Try refreshing secrets once
+                    // console.log('[Spotify] No more secrets available, refreshing cache and retrying...');
+                    try {
+                        await this.refreshSecrets();
+                        hasRefreshedSecrets = true;
+                        continue;
+                    } catch (refreshError) {
+                        // console.log(`[Spotify] Failed to refresh secrets: ${refreshError}`);
+                    }
+                }
+
+                // All attempts failed, throw error
+                // console.log('[Spotify] All secrets exhausted and refresh failed, using fallback');
+                throw new Error('Failed to generate access token URL with all available secrets');
+            }
+        }
     }
 }
 
 export interface SpotifyTrack {
-  album: {
-    images: {
-      height: number;
-      url: string;
-      width: number;
+    album: {
+        images: {
+            height: number;
+            url: string;
+            width: number;
+        }[];
+    };
+    artists: {
+        id: string;
+        name: string;
     }[];
-  };
-  artists: {
+    duration_ms: number;
+    explicit: boolean;
+    external_urls: { spotify: string };
     id: string;
     name: string;
-  }[];
-  duration_ms: number;
-  explicit: boolean;
-  external_urls: { spotify: string };
-  id: string;
-  name: string;
 }
