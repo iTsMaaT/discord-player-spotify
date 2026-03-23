@@ -61,6 +61,7 @@ interface SPGraphQLPlaylistResponse {
             images?: { items: Array<{ sources: Array<{ height: number; url: string; width: number }> }> };
             content: {
                 __typename: string;
+                totalCount?: number;
                 items: Array<{
                     uid: string;
                     itemV2: {
@@ -153,6 +154,39 @@ export class SpotifyAPI {
 
     private get authorizationKey() {
         return Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
+    }
+
+    private async fetchWithRetry(url: string, payload: any, attempt = 0): Promise<Response> {
+        try {
+            const res = await this.fetchData(url, {
+                method: "POST",
+                body: JSON.stringify(payload),
+                headers: { "Content-Type": "application/json" },
+            });
+
+            if (res.status === 429) {
+                const retryAfter = Number(res.headers.get("retry-after")) || 1;
+                await this.sleep(retryAfter * 1000 + Math.random() * 500);
+                return this.fetchWithRetry(url, payload, attempt + 1);
+            }
+
+            if (!res.ok && attempt < 3) {
+                await this.sleep(300 * Math.pow(2, attempt));
+                return this.fetchWithRetry(url, payload, attempt + 1);
+            }
+
+            return res;
+        } catch {
+            if (attempt < 3) {
+                await this.sleep(300 * Math.pow(2, attempt));
+                return this.fetchWithRetry(url, payload, attempt + 1);
+            }
+            throw new Error("Request failed");
+        }
+    }
+
+    private sleep(ms: number) {
+        return new Promise((r) => setTimeout(r, ms));
     }
 
     public async requestToken() {
@@ -274,55 +308,98 @@ export class SpotifyAPI {
 
     public async getPlaylist(id: string) {
         if (!this.useCredentials) {
-            // Anon: use partner GraphQL API - max limit is 5000 (default is 50)
             try {
-                const payload = {
-                    extensions: {
-                        persistedQuery: { sha256Hash: GRAPHQL_PLAYLIST_HASH, version: 1 },
-                    },
-                    operationName: "fetchPlaylist",
-                    variables: {
-                        uri: `spotify:playlist:${id}`,
-                        offset: 0,
-                        limit: 5000,
-                        enableWatchFeedEntrypoint: true,
-                    },
-                };
-                const res = await this.fetchData(SP_PARTNER_GRAPHQL, {
-                    method: "POST",
-                    body: JSON.stringify(payload),
-                    headers: { "Content-Type": "application/json" },
-                });
-                const data: SPGraphQLPlaylistResponse = await res.json();
-                const playlistData = data.data.playlistV2;
+                const limit = 50; // matches Spotify web client behavior
+                let offset = 0;
 
-                const trackItems = playlistData.content.items.filter(
-                    (item) => item.itemV2?.__typename === "TrackResponseWrapper" && item.itemV2.data.__typename !== "NotFound",
-                );
+                const allTracks: any[] = [];
+                let playlistData: SPGraphQLPlaylistResponse["data"]["playlistV2"] | null = null;
+                let total: number | null = null;
 
-                const tracks = trackItems.map((item) => {
-                    const track = item.itemV2.data;
-                    const trackId = track.uri.split(":").pop() || "";
-                    return {
-                        name: track.name,
-                        duration_ms: track.trackDuration.totalMilliseconds,
-                        artists: track.artists.items.map((a) => ({ id: "", name: a.profile.name })),
-                        external_urls: { spotify: `https://open.spotify.com/track/${trackId}` },
-                        id: trackId,
-                        album: {
-                            images: (track.albumOfTrack?.coverArt?.sources ?? [])
-                                .sort((a, b) => (b.height || 0) - (a.height || 0))
-                                .map((s) => ({ url: s.url, height: s.height || 0, width: s.width || 0 })),
+                // hard cap just in case (prevents infinite loops if API changes)
+                const MAX_PAGES = 200; // 50 * 200 = 10k tracks max
+
+                for (let page = 0; page < MAX_PAGES; page++) {
+                    const payload = {
+                        extensions: {
+                            persistedQuery: {
+                                sha256Hash: GRAPHQL_PLAYLIST_HASH,
+                                version: 1,
+                            },
+                        },
+                        operationName: "fetchPlaylist",
+                        variables: {
+                            uri: `spotify:playlist:${id}`,
+                            offset,
+                            limit,
+                            enableWatchFeedEntrypoint: true,
                         },
                     };
-                });
 
-                if (!tracks.length) return null;
+                    const res = await this.fetchWithRetry(SP_PARTNER_GRAPHQL, payload);
+
+                    const data: SPGraphQLPlaylistResponse = await res.json();
+                    const current = data.data.playlistV2;
+
+                    playlistData ??= current;
+
+                    const items = current.content.items;
+                    if (!items?.length) break;
+
+                    // total count (if exposed)
+                    total ??= current.content.totalCount ?? null;
+
+                    const trackItems = items.filter(
+                        (item) =>
+                            item.itemV2?.__typename === "TrackResponseWrapper" &&
+                        item.itemV2.data.__typename !== "NotFound",
+                    );
+
+                    const tracks = trackItems.map((item) => {
+                        const track = item.itemV2.data;
+                        const trackId = track.uri.split(":").pop() || "";
+
+                        return {
+                            name: track.name,
+                            duration_ms: track.trackDuration.totalMilliseconds,
+                            artists: track.artists.items.map((a) => ({
+                                id: "",
+                                name: a.profile.name,
+                            })),
+                            external_urls: {
+                                spotify: `https://open.spotify.com/track/${trackId}`,
+                            },
+                            id: trackId,
+                            album: {
+                                images: (track.albumOfTrack?.coverArt?.sources ?? [])
+                                    .sort((a, b) => (b.height || 0) - (a.height || 0))
+                                    .map((s) => ({
+                                        url: s.url,
+                                        height: s.height || 0,
+                                        width: s.width || 0,
+                                    })),
+                            },
+                        };
+                    });
+
+                    allTracks.push(...tracks);
+
+                    offset += limit;
+
+                    if (items.length < limit) break;
+                    if (total !== null && offset >= total) break;
+
+                    await this.sleep(120 + Math.random() * 180);
+                }
+
+                if (!allTracks.length || !playlistData) return null;
 
                 const playlistThumbnail =
-                    playlistData.images?.items?.[0]?.sources?.sort((a, b) => (b.height || 0) - (a.height || 0))?.[0]?.url ||
-                    trackItems[0]?.itemV2.data.albumOfTrack?.coverArt?.sources?.sort((a, b) => (b.height || 0) - (a.height || 0))?.[0]?.url ||
-                    null;
+                playlistData.images?.items?.[0]?.sources
+                    ?.sort((a, b) => (b.height || 0) - (a.height || 0))?.[0]?.url ||
+                playlistData.content.items?.[0]?.itemV2?.data?.albumOfTrack?.coverArt?.sources
+                    ?.sort((a, b) => (b.height || 0) - (a.height || 0))?.[0]?.url ||
+                null;
 
                 return {
                     name: playlistData.name ?? "",
@@ -330,7 +407,7 @@ export class SpotifyAPI {
                     thumbnail: playlistThumbnail,
                     id,
                     url: `https://open.spotify.com/playlist/${id}`,
-                    tracks,
+                    tracks: allTracks,
                 };
             } catch {
                 return null;
