@@ -1,20 +1,19 @@
 import { parse } from "node-html-parser";
-import * as acorn from "acorn"
+import * as acorn from "acorn";
 import { TOTP, Secret } from "otpauth";
+import { Buffer } from "node:buffer";
 
 const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 
 const SPOTIFY_URLS = [
     "https://open.spotify.com/album/7vI4iTxDmgEN63liQHPEX1",
     "https://open.spotify.com/album/7kFyd5oyJdVX2pIi6P4iHE",
-    "https://open.spotify.com/album/6s84u2TUpR3wdUv4NgKA2j"
-]
+    "https://open.spotify.com/album/6s84u2TUpR3wdUv4NgKA2j",
+];
 
-function transformSecret(secret: string) {
+function transformSecret(secret: string): string {
     const shuffle = secret.split("").map((char, index) => char.charCodeAt(0) ^ index % 33 + 9);
-    const hex = Buffer.from(shuffle.join(""), "utf8").toString("hex");
-
-    return hex;
+    return Buffer.from(shuffle.join(""), "utf8").toString("hex");
 }
 
 export interface AnonymousSpotifyTokenResponse {
@@ -24,132 +23,156 @@ export interface AnonymousSpotifyTokenResponse {
     isAnonymous: true;
 }
 
-function jsLiteralToObject(str: string) {
-    const ast = acorn.parse(str, { ecmaVersion: "latest" });
-    const arrays: { secret: string, version: number }[] = [];
+export interface AnonTokenData {
+    tokens: AnonymousSpotifyTokenResponse;
+    clientToken: string;
+    clientVersion: string;
+    secrets: SpotifySecret[];
+}
 
-    const converter = (node: acorn.Node) => {
+export type SpotifySecret = { secret: string; version: number };
+
+interface SPClientTokenResponse {
+    granted_token: { token: string };
+}
+
+function jsLiteralToObject(str: string): SpotifySecret[] {
+    const ast = acorn.parse(str, { ecmaVersion: "latest" });
+    const arrays: unknown[] = [];
+
+    const converter = (node: acorn.Node): unknown => {
         switch (node.type) {
             case "ObjectExpression": {
                 const obj: Record<string, unknown> = {};
                 // @ts-expect-error properties does exist
                 for (const prop of node.properties) {
-                    if (prop.type === "Property" && prop.key.type === "Identifier") {
+                    if (prop.type === "Property" && prop.key.type === "Identifier") 
                         obj[prop.key.name] = converter(prop.value);
-                    }
+                    
                 }
                 return obj;
             }
-            case "ArrayExpression": {
-                // @ts-expect-error element does exists
+            case "ArrayExpression":
+                // @ts-expect-error elements does exist
                 return node.elements.map(converter);
-            }
-            case "Literal": {
-                // @ts-expect-error value does exists
+            case "Literal":
+                // @ts-expect-error value does exist
                 return node.value;
-            }
             default:
                 return null;
         }
-    }
+    };
 
-    const astWalker = (node?: acorn.Node) => {
+    const astWalker = (node?: acorn.Node): void => {
         if (!node || typeof node !== "object") return;
-        if (node.type === "ArrayExpression") {
-            arrays.push(converter(node));
-        }
-
+        if (node.type === "ArrayExpression") arrays.push(converter(node));
         for (const key in node) {
             const value = node[key as keyof acorn.Node];
-            // @ts-ignore we know this is an array of nodes, but acorn's types don't reflect that
+            // @ts-expect-error we know this is an array of nodes, but acorn's types don't reflect that
             if (Array.isArray(value)) value.forEach(astWalker);
-            // @ts-ignore we know this is an array of nodes, but acorn's types don't reflect that
+            // @ts-expect-error we know this is an array of nodes, but acorn's types don't reflect that
             else astWalker(value);
         }
-    }
+    };
 
     astWalker(ast);
-
-    return arrays[0] as unknown as SpotifySecret[];
+    return arrays[0] as SpotifySecret[];
 }
-export type SpotifySecret = { secret: string, version: number }
-export async function grabSpotifyAnonToken(sec?: SpotifySecret[]) {
-    let secret: SpotifySecret[] | undefined = sec;
 
-    if (!secret) {
-        const spotifyHTML = await fetch(SPOTIFY_URLS[Math.floor(Math.random() * SPOTIFY_URLS.length)], {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
-            }
-        })
-            .then(res => {
-                if (!res.ok) throw new Error(`Failed to fetch Spotify page: ${res.statusText}`);
-                return res.text();
-            });
+export async function grabSpotifyAnonToken(cachedSecrets?: SpotifySecret[]): Promise<AnonTokenData> {
+    const spotifyHTML = await fetch(SPOTIFY_URLS[Math.floor(Math.random() * SPOTIFY_URLS.length)], {
+        headers: { "User-Agent": USER_AGENT },
+    }).then((res) => {
+        if (!res.ok) throw new Error(`Failed to fetch Spotify page: ${res.statusText}`);
+        return res.text();
+    });
 
-        const parsed = parse(spotifyHTML);
+    const parsed = parse(spotifyHTML);
 
+    const appConfig = parsed.getElementById("appServerConfig");
+    if (!appConfig) throw new Error("Unable to retrieve app config");
+    const appConfJson = JSON.parse(Buffer.from(appConfig.textContent, "base64").toString()) as { clientVersion: string };
+    const clientVersion = appConfJson.clientVersion;
+
+    let secrets = cachedSecrets;
+
+    if (!secrets) {
         const scriptTags = parsed.querySelectorAll("script");
+        const webPlayer = scriptTags.find((tag) => tag.attributes.src?.includes("web-player."));
+        if (!webPlayer) throw new Error("Unable to extract web player script");
 
-        const webPlayer = scriptTags.find(tag => tag.attributes.src?.includes("web-player."));
-
-        if (!webPlayer) {
-            throw new Error("Unable to extract web player script");
-        }
-
-        const webPlayerUrl = webPlayer.attributes.src;
-        const webPlayerScript = await fetch(webPlayerUrl, {
-            headers: {
-                "User-Agent": USER_AGENT
-            }
-        }).then(res => {
+        const webPlayerScript = await fetch(webPlayer.attributes.src, {
+            headers: { "User-Agent": USER_AGENT },
+        }).then((res) => {
             if (!res.ok) throw new Error(`Failed to fetch web player script: ${res.statusText}`);
             return res.text();
         });
 
-        const arrayWithObjectRegex = /\[(?:[^\[\]]|\[[^\[\]]*\])*\]/gm;
-
-        const allArrays = webPlayerScript.match(arrayWithObjectRegex)?.filter(v => v.includes("secret"))
+        const arrayWithObjectRegex = /\[(?:[^[\]]|\[[^[\]]*\])*\]/gm;
+        const allArrays = webPlayerScript.match(arrayWithObjectRegex)?.filter((v) => v.includes("secret"));
         const secretRaw = allArrays?.[0];
-
         if (!secretRaw) throw new Error("Unable to extract secret");
 
-        secret = jsLiteralToObject(secretRaw).map(v => ({ secret: transformSecret(v.secret), version: v.version }));
+        secrets = jsLiteralToObject(secretRaw).map((v) => ({
+            secret: transformSecret(v.secret),
+            version: v.version,
+        }));
     }
 
     const totp = new TOTP({
         algorithm: "SHA1",
         digits: 6,
         period: 30,
-        secret: Secret.fromHex(secret[0].secret)
+        secret: Secret.fromHex(secrets[0].secret),
     });
 
     const serverTime = Math.floor(Date.now() / 1000);
     const totpClient = totp.generate();
-    const totpServer = totp.generate({
-        timestamp: serverTime
-    });
+    const totpServer = totp.generate({ timestamp: serverTime });
 
-    const url = new URL("https://open.spotify.com/api/token");
-    const searchParams = url.searchParams;
+    const tokenUrl = new URL("https://open.spotify.com/api/token");
+    tokenUrl.searchParams.set("reason", "init");
+    tokenUrl.searchParams.set("productType", "web-player");
+    tokenUrl.searchParams.set("totp", totpClient);
+    tokenUrl.searchParams.set("totpServer", totpServer);
+    tokenUrl.searchParams.set("totpVer", secrets[0].version.toString());
 
-    searchParams.set("reason", "init");
-    searchParams.set("productType", "web-player");
-    searchParams.set("totp", totpClient);
-    searchParams.set("totpServer", totpServer);
-    searchParams.set("totpVer", secret[0].version.toString());
-
-    const tokenResponse = await fetch(url.toString(), {
-        headers: {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
-        }
-    }).then(res => {
+    const tokens = await fetch(tokenUrl.toString(), {
+        headers: { "User-Agent": USER_AGENT },
+    }).then((res) => {
         if (!res.ok) throw new Error(`Failed to fetch Spotify token: ${res.statusText}`);
         return res.json();
-    });
+    }) as AnonymousSpotifyTokenResponse;
+
+    const clientTokenResponse = await fetch("https://clienttoken.spotify.com/v1/clienttoken", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+            "Origin": "https://open.spotify.com",
+            "Referer": "https://open.spotify.com",
+            "Accept": "application/json",
+        },
+        body: JSON.stringify({
+            client_data: {
+                client_version: clientVersion,
+                client_id: tokens.clientId,
+                js_sdk_data: {
+                    device_brand: "unknown",
+                    device_model: "unknown",
+                    os: "linux",
+                    os_version: "unknown",
+                    device_id: crypto.randomUUID(),
+                    device_type: "computer",
+                },
+            },
+        }),
+    }).then((res) => res.json()) as SPClientTokenResponse;
 
     return {
-        tokens: tokenResponse as AnonymousSpotifyTokenResponse,
-        secrets: secret // cache this for around 6 hours
-    }
+        tokens,
+        clientToken: clientTokenResponse.granted_token.token,
+        clientVersion,
+        secrets, // cache for ~6 hours (re-use on subsequent token refreshes)
+    };
 }

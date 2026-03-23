@@ -3,7 +3,7 @@ import { BaseExtractor, ExtractorInfo, ExtractorSearchContext, ExtractorStreamab
 import type { Readable } from "stream";
 import { SpotifyAPI } from "./internal/spotify";
 import { spotifySongRegex, spotifyPlaylistRegex, spotifyAlbumRegex, isUrl, parseSpotifyUrl, market } from "./internal/helper";
-import { grabSpotifyAnonToken } from "./internal/grabSpotifyToken";
+import { grabSpotifyAnonToken, type AnonTokenData } from "./internal/grabSpotifyToken";
 import { User } from "discord.js";
 
 type StreamFN = (url: string, track: Track) => Promise<Readable | string>;
@@ -15,7 +15,7 @@ export interface SpotifyExtractorInit {
   createStream?: (ext: SpotifyExtractor, url: string) => Promise<Readable | string>;
 }
 
-export { parseSpotifyUrl, grabSpotifyAnonToken };
+export { parseSpotifyUrl, grabSpotifyAnonToken, type AnonTokenData };
 
 export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     public static identifier = "com.discord-player.itsmaat.spotifyextractor" as const;
@@ -225,25 +225,22 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
     public async getRelatedTracks(track: Track, history: GuildQueueHistory): Promise<ExtractorInfo> {
         let relatedTracks: { title: string; duration: number; artist: string; url: string; thumbnail: string | null }[] | null = null;
         if (!this.internal.useCredentials) {
-            const trackIds = Array.from(
+            const trackIds: string[] = Array.from(
                 new Set(
                     history.tracks
                         .toArray()
                         .filter((t: Track) => t.url.includes("spotify.com"))
-                        .slice(0, 25)
-                        .map((t: Track) => {
-                            const lastSegment = t.url.split("/").at(-1);
-                            return lastSegment ? lastSegment.split("?").at(0) : null;
-                        })
-                        .filter((id): id is string => id !== null),
+                        .map((t: Track) => t.url.split("/").at(-1)?.split("?").at(0))
+                        .filter((id): id is string => !!id),
                 ),
             )
                 .sort(() => 0.5 - Math.random())
                 .slice(0, 5);
-            if (trackIds.length) 
-                relatedTracks = await this.internal.getRecommendations(trackIds);
-      
+            if (trackIds.length)
+                // TODO: implement a way to fetch recommendations using anonymous token - returns empty array at the moment
+                relatedTracks = await this.internal.getRecommendations(trackIds); 
         }
+
         if (this.internal.useCredentials || !relatedTracks?.length) {
             const artist = Array.from(
                 new Set(
@@ -257,9 +254,8 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
                 .sort(() => 0.5 - Math.random())
                 .slice(0, 1);
 
-            if (artist) 
+            if (artist.length)
                 relatedTracks = await this.internal.search(`artist:${artist}`);
-      
         }
 
         if (!relatedTracks?.length) {
