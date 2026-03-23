@@ -34,7 +34,7 @@ await player.extractors.register(SpotifyExtractor, { /* options */ });
 | Can bridge to ... | ✅ |
 | Autoplay | ✅* |
 
-\* Autoplay works differently whether you use credentials or not.
+\* Autoplay is a work in progress. Currently, it simply fetches a track from the same artist.
 
 ## Options
 
@@ -44,6 +44,7 @@ await player.extractors.register(SpotifyExtractor, { /* options */ });
 | clientSecret | string | null | No | Your Spotify client secret |
 | market | string | "" | No | The market to use for the Spotify API. |
 | createStream(ext: SpotifyExtractor, url: string) => Promise<Readable \| string>; | function | null | No | A function that returns a Readable stream or a string URL to the stream. |
+| playlistFetchLimitAnon | number | 25 | No | Limits the number of tracks fetched from a playlist when using anon mode. |
 
 [Information on the market parameter and the reason why it is required.](https://developer.spotify.com/documentation/web-api/concepts/track-relinking)
 
