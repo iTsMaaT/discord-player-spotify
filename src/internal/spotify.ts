@@ -5,12 +5,12 @@ import { Buffer } from "node:buffer";
 import { grabSpotifyAnonToken, type SpotifySecret } from "./grabSpotifyToken";
 
 const SP_BASE = "https://api.spotify.com/v1";
+const SP_PARTNER_GRAPHQL = "https://api-partner.spotify.com/pathfinder/v2/query";
 
 // Persisted query hashes from Spotify's JS bundle — may need updating if Spotify rotates them
 const GRAPHQL_SEARCH_HASH = "3c9d3f60dac5dea3876b6db3f534192b1c1d90032c4233c1bbaba526db41eb31";
 const GRAPHQL_PLAYLIST_HASH = "346811f856fb0b7e4f6c59f8ebea78dd081c6e2fb01b77c954b26259d5fc6763";
 const GRAPHQL_ALBUM_HASH = "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10";
-const GRAPHQL_LOOKUP_HASH = "5bb408450626d595cb24363104b612e14f9b966430f599121696e8996ea03794";
 
 interface SP_ACCESS_TOKEN {
     token: string;
@@ -254,7 +254,7 @@ export class SpotifyAPI {
                 },
             };
 
-            const res = await this.fetchData("https://api-partner.spotify.com/pathfinder/v2/query", {
+            const res = await this.fetchData(SP_PARTNER_GRAPHQL, {
                 method: "POST",
                 body: JSON.stringify(payload),
                 headers: { "Content-Type": "application/json" },
@@ -288,7 +288,7 @@ export class SpotifyAPI {
                         enableWatchFeedEntrypoint: true,
                     },
                 };
-                const res = await this.fetchData("https://api-partner.spotify.com/pathfinder/v2/query", {
+                const res = await this.fetchData(SP_PARTNER_GRAPHQL, {
                     method: "POST",
                     body: JSON.stringify(payload),
                     headers: { "Content-Type": "application/json" },
@@ -316,7 +316,6 @@ export class SpotifyAPI {
                         },
                     };
                 });
-                console.log("tracks:", tracks.length);
 
                 if (!tracks.length) return null;
 
@@ -414,7 +413,7 @@ export class SpotifyAPI {
                             limit: 50,
                         },
                     };
-                    const res = await this.fetchData("https://api-partner.spotify.com/pathfinder/v2/query", {
+                    const res = await this.fetchData(SP_PARTNER_GRAPHQL, {
                         method: "POST",
                         body: JSON.stringify(payload),
                         headers: { "Content-Type": "application/json" },
