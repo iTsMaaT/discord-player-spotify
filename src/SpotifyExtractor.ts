@@ -13,6 +13,11 @@ export interface SpotifyExtractorInit {
   clientSecret?: string;
   market?: string | null;
   createStream?: (ext: SpotifyExtractor, url: string) => Promise<Readable | string>;
+  /**
+   * Number of tracks fetched per page when loading a playlist via the private API.
+   * Must be between 1 and 5000. Defaults to 25.
+   */
+  playlistFetchLimitAnon?: number;
 }
 
 export { parseSpotifyUrl, grabSpotifyAnonToken, type AnonTokenData };
@@ -27,10 +32,16 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
 
     private _market = this.options.market || market;
 
-    public internal = new SpotifyAPI({ ...this._credentials, market: this._market });
+    private _playlistFetchLimitAnon = Math.min(5000, Math.max(1, this.options.playlistFetchLimitAnon ?? 25));
+
+    public internal = new SpotifyAPI({ ...this._credentials, market: this._market, playlistFetchLimitAnon: this._playlistFetchLimitAnon });
 
     public async activate(): Promise<void> {
         this.protocols = ["spsearch", "spotify"];
+
+        const limit = this.options.playlistFetchLimitAnon;
+        if (limit !== undefined && (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 5000))
+            throw new RangeError(`SpotifyExtractor: playlistFetchLimitAnon must be an integer between 1 and 5000 (got ${limit})`);
 
         const fn = this.options.createStream;
         if (typeof fn === "function") {

@@ -143,13 +143,16 @@ export class SpotifyAPI {
     public useCredentials: boolean = false;
     private _cachedSecrets: SpotifySecret[] | undefined;
 
-    constructor(credentials: { clientId?: string; clientSecret?: string; market?: string }) {
+    private playlistFetchLimitAnon: number;
+
+    constructor(credentials: { clientId?: string; clientSecret?: string; market?: string; playlistFetchLimitAnon?: number }) {
         if (credentials.clientId && credentials.clientSecret) {
             this.useCredentials = true;
             this.clientId = credentials.clientId;
             this.clientSecret = credentials.clientSecret;
         }
         this.market = credentials.market || market;
+        this.playlistFetchLimitAnon = credentials.playlistFetchLimitAnon ?? 25;
     }
 
     private get authorizationKey() {
@@ -309,7 +312,7 @@ export class SpotifyAPI {
     public async getPlaylist(id: string) {
         if (!this.useCredentials) {
             try {
-                const limit = 50; // matches Spotify web client behavior
+                const limit = this.playlistFetchLimitAnon;
                 let offset = 0;
 
                 const allTracks: any[] = [];
@@ -317,7 +320,7 @@ export class SpotifyAPI {
                 let total: number | null = null;
 
                 // hard cap just in case (prevents infinite loops if API changes)
-                const MAX_PAGES = 200; // 50 * 200 = 10k tracks max
+                const MAX_PAGES = Math.ceil(10000 / limit);
 
                 for (let page = 0; page < MAX_PAGES; page++) {
                     const payload = {
