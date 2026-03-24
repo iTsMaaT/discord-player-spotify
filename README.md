@@ -44,7 +44,7 @@ await player.extractors.register(SpotifyExtractor, { /* options */ });
 | clientSecret | string | null | No | Your Spotify client secret |
 | market | string | "" | No | The market to use for the Spotify API. |
 | createStream(ext: SpotifyExtractor, url: string) => Promise<Readable \| string>; | function | null | No | A function that returns a Readable stream or a string URL to the stream. |
-| playlistFetchLimitAnon | number | 25 | No | Limits the number of tracks fetched from a playlist when using anon mode. |
+| anon.maxPagingQueries | number | 25 | No | Limits the number of tracks per request fetched for playlists when using anon mode. Must be between 1 and 5000. |
 
 [Information on the market parameter and the reason why it is required.](https://developer.spotify.com/documentation/web-api/concepts/track-relinking)
 

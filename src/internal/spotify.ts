@@ -143,16 +143,16 @@ export class SpotifyAPI {
     public useCredentials: boolean = false;
     private _cachedSecrets: SpotifySecret[] | undefined;
 
-    private playlistFetchLimitAnon: number;
+    private maxPagingQueries: number;
 
-    constructor(credentials: { clientId?: string; clientSecret?: string; market?: string; playlistFetchLimitAnon?: number }) {
+    constructor(credentials: { clientId?: string; clientSecret?: string; market?: string; maxPagingQueries?: number }) {
         if (credentials.clientId && credentials.clientSecret) {
             this.useCredentials = true;
             this.clientId = credentials.clientId;
             this.clientSecret = credentials.clientSecret;
         }
         this.market = credentials.market || market;
-        this.playlistFetchLimitAnon = credentials.playlistFetchLimitAnon ?? 25;
+        this.maxPagingQueries = credentials.maxPagingQueries ?? 25;
     }
 
     private get authorizationKey() {
@@ -261,7 +261,7 @@ export class SpotifyAPI {
         try {
             if (this.useCredentials) {
                 const res = await this.fetchData(
-                    `${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track${this.market ? `&market=${this.market}` : ""}`,
+                    `${SP_BASE}/search/?q=${encodeURIComponent(query)}&type=track&limit=10${this.market ? `&market=${this.market}` : ""}`,
                 );
                 const data: { tracks: { items: SpotifyTrack[] } } = await res.json();
                 return data.tracks.items.map((m) => ({
@@ -312,7 +312,7 @@ export class SpotifyAPI {
     public async getPlaylist(id: string) {
         if (!this.useCredentials) {
             try {
-                const limit = this.playlistFetchLimitAnon;
+                const limit = this.maxPagingQueries;
                 let offset = 0;
 
                 const allTracks: any[] = [];
@@ -427,22 +427,22 @@ export class SpotifyAPI {
                 id: string;
                 name: string;
                 images: { url: string }[];
-                tracks: {
-                    items: { track: SpotifyTrack }[];
+                items: {
+                    items: { item: SpotifyTrack }[];
                     next?: string;
                 };
             } = await res.json();
 
-            if (!data.tracks.items.length) return null;
+            if (!data.items.items.length) return null;
 
-            const t: { track: SpotifyTrack }[] = data.tracks.items;
-            let next: string | undefined = data.tracks.next;
+            const t: { item: SpotifyTrack }[] = data.items.items;
+            let next: string | undefined = data.items.next;
 
             while (typeof next === "string") {
                 try {
                     const nextRes = await this.fetchData(next);
                     if (!nextRes) break;
-                    const nextPage: { items: { track: SpotifyTrack }[]; next?: string } = await nextRes.json();
+                    const nextPage: { items: { item: SpotifyTrack }[]; next?: string } = await nextRes.json();
                     t.push(...nextPage.items);
                     next = nextPage.next;
                     if (!next) break;
@@ -452,8 +452,8 @@ export class SpotifyAPI {
             }
 
             const tracks = t
-                .filter(({ track: m }) => m?.name && m?.artists)
-                .map(({ track: m }) => ({
+                .filter(({ item: m }) => m?.name && m?.artists)
+                .map(({ item: m }) => ({
                     name: m.name,
                     duration_ms: m.duration_ms,
                     artists: m.artists,
@@ -560,16 +560,16 @@ export class SpotifyAPI {
                 id: string;
                 name: string;
                 images: { url: string }[];
-                tracks: {
+                items: {
                     items: SpotifyTrack[];
                     next?: string;
                 };
             } = await res.json();
 
-            if (!data.tracks.items.length) return null;
+            if (!data.items.items.length) return null;
 
-            const t: SpotifyTrack[] = data.tracks.items;
-            let next: string | undefined = data.tracks.next;
+            const t: SpotifyTrack[] = data.items.items;
+            let next: string | undefined = data.items.next;
 
             while (typeof next === "string") {
                 try {
