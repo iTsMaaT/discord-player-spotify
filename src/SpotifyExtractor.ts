@@ -13,6 +13,16 @@ export interface SpotifyExtractorInit {
   clientSecret?: string;
   market?: string | null;
   createStream?: (ext: SpotifyExtractor, url: string) => Promise<Readable | string>;
+  /**
+   * Options that apply when running in anon mode.
+   */
+  anon?: {
+    /**
+     * Maximum number of paging requests when fetching a playlist.
+     * Must be between 1 and 5000. Defaults to 25 (web client behavior).
+     */
+    maxPagingQueries?: number;
+  };
 }
 
 export { parseSpotifyUrl, grabSpotifyAnonToken, type AnonTokenData };
@@ -27,10 +37,16 @@ export class SpotifyExtractor extends BaseExtractor<SpotifyExtractorInit> {
 
     private _market = this.options.market || market;
 
-    public internal = new SpotifyAPI({ ...this._credentials, market: this._market });
+    private _anonMaxPagingQueries = Math.min(5000, Math.max(1, this.options.anon?.maxPagingQueries ?? 25));
+
+    public internal = new SpotifyAPI({ ...this._credentials, market: this._market, maxPagingQueries: this._anonMaxPagingQueries });
 
     public async activate(): Promise<void> {
         this.protocols = ["spsearch", "spotify"];
+
+        const limit = this.options.anon?.maxPagingQueries;
+        if (limit !== undefined && (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 5000))
+            throw new RangeError(`SpotifyExtractor: anon.maxPagingQueries must be an integer between 1 and 5000 (got ${limit})`);
 
         const fn = this.options.createStream;
         if (typeof fn === "function") {
